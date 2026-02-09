@@ -76,13 +76,29 @@ async def health():
     }
 
 
-def decode_frame(data: str) -> np.ndarray:
-    """Decode a base64-encoded JPEG (with or without data URL prefix) to an OpenCV frame."""
+def decode_frame(data: str) -> np.ndarray | None:
+    """Decode a base64-encoded JPEG (with or without data URL prefix) to an OpenCV frame.
+
+    Returns None if the input is empty, not valid base64, or not a valid image.
+    """
+    if not data or not data.strip():
+        return None
+
     # Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
     if data.startswith("data:"):
         data = data.split(",", 1)[1]
 
-    img_bytes = base64.b64decode(data)
+    if not data:
+        return None
+
+    try:
+        img_bytes = base64.b64decode(data)
+    except Exception:
+        return None
+
+    if not img_bytes:
+        return None
+
     img_array = np.frombuffer(img_bytes, dtype=np.uint8)
     frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
     return frame

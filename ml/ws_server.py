@@ -13,6 +13,7 @@ Run:
 """
 
 import base64
+import json
 import logging
 import time
 from collections import deque
@@ -77,8 +78,8 @@ async def health():
 
 def decode_frame(data: str) -> np.ndarray:
     """Decode a base64-encoded JPEG (with or without data URL prefix) to an OpenCV frame."""
-    # Strip data URL prefix if present
-    if "," in data:
+    # Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
+    if data.startswith("data:"):
         data = data.split(",", 1)[1]
 
     img_bytes = base64.b64decode(data)
@@ -106,7 +107,6 @@ async def sign_detection(websocket: WebSocket):
             raw = await websocket.receive_text()
 
             # Parse message
-            import json
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:

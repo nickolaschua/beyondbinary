@@ -15,6 +15,7 @@ Run:
 import base64
 import json
 import logging
+import os
 import time
 from collections import deque
 
@@ -63,8 +64,14 @@ model = None
 async def load_model():
     global model
     logger.info(f"Loading model from {MODEL_PATH}...")
-    model = tf.keras.models.load_model(MODEL_PATH)
-    logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
+    if not os.path.isfile(MODEL_PATH):
+        logger.error(f"Model file not found at {MODEL_PATH}. Server will start but predictions will not work.")
+        return
+    try:
+        model = tf.keras.models.load_model(MODEL_PATH)
+        logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}. Server will start but predictions will not work.")
 
 
 @app.get("/health")

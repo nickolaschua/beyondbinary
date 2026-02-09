@@ -169,9 +169,9 @@ def main():
 
     # Check Python version
     major, minor = sys.version_info[:2]
-    if minor > 11:
-        print(f"  [WARN] Python {major}.{minor} detected. MediaPipe requires 3.9-3.11.")
-        print("         If mediapipe import fails, install Python 3.11.")
+    if minor > 12:
+        print(f"  [WARN] Python {major}.{minor} detected. MediaPipe requires 3.9-3.12.")
+        print("         If mediapipe import fails, install Python 3.12.")
         print()
 
     # 1. Import checks

@@ -91,7 +91,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Milestone Goal:** Resolve dependency hell, harden the pipeline against edge cases and security issues, add proper test coverage, and instrument for performance monitoring.
 
-- [ ] **Phase 11: Dependency Resolution** - Python 3.12 venv, pinned requirements install, full import + MediaPipe verification
+- [x] **Phase 11: Dependency Resolution** - Python 3.12 venv, pinned requirements install, full import + MediaPipe verification
 - [ ] **Phase 12: Consolidate Constants & Config** - Deduplicate constants, centralize config with env var overrides, fix relative MODEL_PATH
 - [ ] **Phase 13: Error Handling & Input Validation** - Specific exceptions, data URL validation, payload size limits, model-load safety
 - [ ] **Phase 14: Security Hardening** - Fix CORS wildcard+credentials, add frame rate limiting, basic API key auth
@@ -104,10 +104,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal**: Working Python 3.12 venv with all pinned dependencies installed and verified. MediaPipe, TensorFlow, OpenCV all import cleanly. Webcam + MediaPipe Holistic detection confirmed working. All existing scripts run without import errors.
 **Depends on**: Previous milestone complete
 **Research**: Unlikely (Python 3.12 already installed, mediapipe resolves on 3.12, all versions pinned)
-**Plans**: TBD
+**Plans**: 1/1 complete
 
 Plans:
-- [ ] 11-01: TBD (run /gsd:plan-phase 11 to break down)
+- [x] 11-01: Create venv, install deps, verify environment, update PROJECT.md
 
 #### Phase 12: Consolidate Constants & Config
 **Goal**: Single source of truth for ACTIONS, SEQUENCE_LENGTH, NUM_SEQUENCES in `ml/utils.py`. HOST, PORT, CONFIDENCE_THRESHOLD, STABILITY_WINDOW centralized with environment variable overrides. MODEL_PATH uses absolute path resolution.
@@ -191,7 +191,7 @@ Phases execute in numeric order: 1 → 2 → ... → 10 → 11 → 12 → ... �
 | 8. WebSocket Server | v1.0 | -/- | Complete | 2026-02-09 |
 | 9. Integration Testing | v1.0 | -/- | Complete | 2026-02-09 |
 | 10. Polish & Demo Support | v1.0 | -/- | Complete | 2026-02-09 |
-| 11. Dependency Resolution | v1.1 | 0/? | Not started | - |
+| 11. Dependency Resolution | v1.1 | 1/1 | Complete | 2026-02-10 |
 | 12. Consolidate Constants & Config | v1.1 | 0/? | Not started | - |
 | 13. Error Handling & Input Validation | v1.1 | 0/? | Not started | - |
 | 14. Security Hardening | v1.1 | 0/? | Not started | - |

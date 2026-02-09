@@ -30,6 +30,8 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
 
+from utils import ACTIONS, NUM_SEQUENCES, SEQUENCE_LENGTH
+
 # Set random seeds for reproducibility
 np.random.seed(42)
 tf.random.set_seed(42)
@@ -45,12 +47,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-ACTIONS = np.array([
-    "Hello", "Thank_You", "Help", "Yes", "No",
-    "Please", "Sorry", "I_Love_You", "Stop", "More",
-])
-NUM_SEQUENCES = 30
-SEQUENCE_LENGTH = 30
 NUM_FEATURES = 1662  # pose(132) + face(1404) + lh(63) + rh(63)
 
 

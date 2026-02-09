@@ -18,11 +18,8 @@ import os
 import sys
 import numpy as np
 
-# Constants (duplicated here to keep verify_data.py standalone)
-ACTIONS = ['Hello', 'Thank_You', 'Help', 'Yes', 'No',
-           'Please', 'Sorry', 'I_Love_You', 'Stop', 'More']
-DATA_PATH = 'MP_Data'
-NUM_SEQUENCES = 30
+from utils import ACTIONS, NUM_SEQUENCES, SEQUENCE_LENGTH, DATA_PATH
+
 EXPECTED_SHAPE = (1662,)
 
 # Keypoint index ranges for hand landmarks

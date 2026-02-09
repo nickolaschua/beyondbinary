@@ -53,7 +53,16 @@
       "Bash(git rm:*)",
       "Bash(git reset:*)",
       "Bash(git ls-tree:*)",
-      "Bash(git -C \"C:\\\\Users\\\\nicko\\\\Desktop\\\\beyondbinary\\\\beyondbinary\" checkout -b nickolas)"
+      "Bash(git -C \"C:\\\\Users\\\\nicko\\\\Desktop\\\\beyondbinary\\\\beyondbinary\" checkout -b nickolas)",
+      "Bash(git -C \"C:\\\\Users\\\\nicko\\\\Desktop\\\\beyondbinary\\\\beyondbinary\" checkout nickolas)",
+      "WebSearch",
+      "mcp__plugin_context7_context7__query-docs",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python:*)",
+      "Bash(git cherry-pick:*)"
     ]
   }
 }

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Audio Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 40px;
+            background: #f0f0f0;
+        }
+        .log {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Audio Recording Test</h1>
+    <p>This tests if audio recording works in your browser</p>
+
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop</button>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        function addLog(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const className = type;
+            log.innerHTML += `<div class="${className}">[${time}] ${message}</div>`;
+            log.scrollTop = log.scrollHeight;
+            console.log(message);
+        }
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                addLog('🎤 Requesting microphone access...', 'info');
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                addLog('✅ Microphone access granted!', 'success');
+
+                const mimeTypes = [
+                    'audio/webm',
+                    'audio/webm;codecs=opus',
+                    'audio/ogg;codecs=opus',
+                    'audio/mp4'
+                ];
+
+                let selectedMimeType = null;
+                for (const mimeType of mimeTypes) {
+                    if (MediaRecorder.isTypeSupported(mimeType)) {
+                        selectedMimeType = mimeType;
+                        addLog(`✅ Using codec: ${mimeType}`, 'success');
+                        break;
+                    }
+                }
+
+                if (!selectedMimeType) {
+                    addLog('⚠️  No supported codec found, using default', 'error');
+                }
+
+                const options = selectedMimeType ? { mimeType: selectedMimeType } : {};
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                        addLog(`📊 Audio chunk: ${event.data.size} bytes`, 'info');
+                    }
+                };
+
+                mediaRecorder.onstart = () => {
+                    addLog('🔴 Recording started!', 'success');
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                };
+
+                mediaRecorder.onstop = () => {
+                    addLog('⏹️  Recording stopped', 'info');
+
+                    const audioBlob = new Blob(audioChunks, { type: selectedMimeType || 'audio/webm' });
+                    addLog(`📦 Total audio size: ${audioBlob.size} bytes`, 'info');
+
+                    // Test base64 encoding
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result.split(',')[1];
+                        addLog(`✅ Base64 encoded: ${base64.length} characters`, 'success');
+                        addLog(`Sample: ${base64.substring(0, 50)}...`, 'info');
+                    };
+                    reader.readAsDataURL(audioBlob);
+
+                    audioChunks = [];
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                };
+
+                mediaRecorder.onerror = (event) => {
+                    addLog(`❌ MediaRecorder error: ${event.error}`, 'error');
+                };
+
+                mediaRecorder.start();
+                addLog(`📝 State: ${mediaRecorder.state}`, 'info');
+
+            } catch (error) {
+                addLog(`❌ Error: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+        });
+
+        // Log browser info
+        addLog('🌐 Browser: ' + navigator.userAgent, 'info');
+        addLog('🎤 MediaRecorder available: ' + (typeof MediaRecorder !== 'undefined'), 'info');
+        addLog('🎙️  getUserMedia available: ' + (typeof navigator.mediaDevices !== 'undefined'), 'info');
+    </script>
+</body>
+</html>

@@ -59,9 +59,9 @@ Hello, Thank You, Help, Yes, No, Please, Sorry, I Love You, Stop, More
 ## Constraints
 
 - **Platform**: Windows, no local GPU — training must happen on Google Colab (T4 GPU)
-- **Python**: 3.12 — MediaPipe 0.10.32 supports 3.9-3.12, system Python 3.13 not compatible
+- **Python**: 3.12 — MediaPipe 0.10.21 supports 3.9-3.12, system Python 3.13 not compatible
 - **Runtime**: Python 3.12 venv at ml/venv/ (created via `py -3.12 -m venv ml/venv`)
-- **Dependencies**: numpy 2.4.2, opencv-python 4.13.0.92, mediapipe 0.10.32, tensorflow 2.20.0, fastapi 0.128.6 (see ml/requirements.txt for full list)
+- **Dependencies**: mediapipe 0.10.21, tensorflow 2.16.2, numpy 1.26.4, opencv-python 4.11.0.86, fastapi 0.128.6 (see ml/requirements.txt for full list)
 - **Data format**: 30 frames x 1662 features per sequence. Keypoint order: `[pose, face, lh, rh]` (matching nicknochnack convention and .context spec)
 - **WebSocket server**: FastAPI on port 8001, separate from main backend on port 8000
 - **Integration contract**: Frontend sends `{type: "frame", frame: "<base64 jpeg>"}`, server returns `{type: "sign_prediction", sign: "Hello", confidence: 0.95, is_new_sign: true, hands_detected: true}`

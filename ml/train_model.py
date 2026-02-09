@@ -26,8 +26,13 @@ import logging
 from datetime import datetime
 
 import numpy as np
+import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
+
+# Set random seeds for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
 
 # Configure logging
 logging.basicConfig(
@@ -413,6 +418,10 @@ def main():
     model_path = os.path.join(args.output_dir, "action_model.h5")
     model.save(model_path)
     logger.info("Model saved to %s", model_path)
+
+    savedmodel_path = os.path.join(args.output_dir, "action_model_savedmodel")
+    model.save(savedmodel_path)
+    logger.info("SavedModel saved to %s", savedmodel_path)
 
     actions_path = os.path.join(args.output_dir, "actions.npy")
     np.save(actions_path, ACTIONS)

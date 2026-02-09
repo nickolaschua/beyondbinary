@@ -1,22 +1,22 @@
-"""Claude API Service for Jargon Simplification and Quick-Reply Generation.
+"""Groq LLM Service for Jargon Simplification and Quick-Reply Generation.
 
 Takes a raw transcript (potentially containing medical/legal/technical jargon)
 and the detected tone, then returns:
 1. Simplified version of the text (plain language)
 2. 3-4 contextual quick-reply suggestions with natural spoken phrasing
 
-Uses Claude Haiku for speed (sub-second responses) and cost efficiency.
+Uses Groq's Llama 3.1 70B for speed (very fast inference) and zero cost.
 """
 
 import asyncio
 import json
 
-import anthropic
+from groq import Groq
 
 from app.config import settings
 
-_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-MODEL = "claude-3-5-haiku-20241022"
+_client = Groq(api_key=settings.GROQ_API_KEY)
+MODEL = "llama-3.3-70b-versatile"  # Latest Llama model, fast, good at JSON, free
 
 
 async def process_transcript(
@@ -73,15 +73,19 @@ User profile: {profile_type}"""
 
     response_text = ""
     try:
-        # Anthropic client is sync — run in thread to avoid blocking
+        # Groq client is sync — run in thread to avoid blocking
         def _call():
-            response = _client.messages.create(
+            response = _client.chat.completions.create(
                 model=MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
                 max_tokens=500,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
+                temperature=0.3,  # Lower = more focused/consistent
+                response_format={"type": "json_object"}  # Force JSON output
             )
-            return response.content[0].text.strip()
+            return response.choices[0].message.content.strip()
 
         response_text = await asyncio.to_thread(_call)
 
@@ -100,7 +104,7 @@ User profile: {profile_type}"""
         }
 
     except json.JSONDecodeError as e:
-        print(f"Claude JSON parse error: {e}")
+        print(f"Groq JSON parse error: {e}")
         print(f"Raw response: {response_text[:200] if response_text else 'N/A'}")
         return {
             "simplified": transcript,
@@ -112,7 +116,7 @@ User profile: {profile_type}"""
             "summary": transcript,
         }
     except Exception as e:
-        print(f"Claude API error: {e}")
+        print(f"Groq LLM API error: {e}")
         return {
             "simplified": transcript,
             "quick_replies": [

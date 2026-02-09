@@ -30,16 +30,14 @@ from utils import (
     ACTIONS,
     SEQUENCE_LENGTH,
     MODEL_PATH,
+    CONFIDENCE_THRESHOLD,
+    STABILITY_WINDOW,
+    HOST,
+    PORT,
     StabilityFilter,
     mediapipe_detection,
     extract_keypoints,
 )
-
-# --- Configuration ---
-CONFIDENCE_THRESHOLD = 0.7
-STABILITY_WINDOW = 8
-HOST = "0.0.0.0"
-PORT = 8001
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

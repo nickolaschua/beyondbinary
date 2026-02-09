@@ -21,6 +21,8 @@ from utils import (
     ACTIONS,
     SEQUENCE_LENGTH,
     MODEL_PATH,
+    CONFIDENCE_THRESHOLD,
+    STABILITY_WINDOW,
     StabilityFilter,
     mediapipe_detection,
     draw_landmarks,
@@ -28,8 +30,6 @@ from utils import (
 )
 
 # --- Configuration ---
-CONFIDENCE_THRESHOLD = 0.7
-STABILITY_WINDOW = 8          # consecutive same predictions required
 MAX_SENTENCE_LENGTH = 5       # last N signs displayed
 
 # --- Colors (BGR) ---

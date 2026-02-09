@@ -29,7 +29,16 @@ ACTIONS = np.array([
 SEQUENCE_LENGTH = 30
 NUM_SEQUENCES = 30
 DATA_PATH = os.path.join('MP_Data')
-MODEL_PATH = os.path.join('models', 'action_model.h5')
+
+# Resolve MODEL_PATH relative to this file's directory so it works regardless of cwd
+_ML_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.h5')
+
+# --- Server / runtime configuration (overridable via environment variables) ---
+HOST = os.environ.get("SENSEAI_HOST", "0.0.0.0")
+PORT = int(os.environ.get("SENSEAI_PORT", "8001"))
+CONFIDENCE_THRESHOLD = float(os.environ.get("SENSEAI_CONFIDENCE_THRESHOLD", "0.7"))
+STABILITY_WINDOW = int(os.environ.get("SENSEAI_STABILITY_WINDOW", "8"))
 
 # MediaPipe setup
 mp_holistic = mp.solutions.holistic

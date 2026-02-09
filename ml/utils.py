@@ -11,6 +11,7 @@ CRITICAL CONTRACT:
 """
 
 import os
+from collections import deque
 
 import cv2
 import mediapipe as mp
@@ -143,3 +144,56 @@ def extract_keypoints(results):
     ).flatten() if results.right_hand_landmarks else np.zeros(21 * 3)
 
     return np.concatenate([pose, face, lh, rh])
+
+
+# ========================
+# STABILITY FILTER
+# ========================
+
+class StabilityFilter:
+    """Stabilize predictions by requiring N consecutive identical results above a threshold.
+
+    Args:
+        window_size: Number of consecutive identical predictions required.
+        threshold: Minimum confidence to accept a prediction.
+    """
+
+    def __init__(self, window_size: int = 8, threshold: float = 0.7):
+        self.window_size = window_size
+        self.threshold = threshold
+        self._history = deque(maxlen=window_size)
+        self._current_sign = None
+
+    def update(self, sign: str, confidence: float) -> dict:
+        """Process a new prediction and return stability status.
+
+        Args:
+            sign: The predicted sign label.
+            confidence: The prediction confidence (0-1).
+
+        Returns:
+            dict with keys: is_stable, is_new_sign, sign
+        """
+        if confidence >= self.threshold:
+            self._history.append(sign)
+        else:
+            self._history.append(None)
+
+        is_stable = (
+            len(self._history) == self.window_size
+            and len(set(self._history)) == 1
+            and self._history[0] is not None
+        )
+
+        is_new_sign = False
+        if is_stable:
+            stable_sign = self._history[0]
+            if stable_sign != self._current_sign:
+                is_new_sign = True
+                self._current_sign = stable_sign
+
+        return {
+            "is_stable": is_stable,
+            "is_new_sign": is_new_sign,
+            "sign": self._history[0] if is_stable else sign,
+        }

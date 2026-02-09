@@ -29,6 +29,7 @@ from utils import (
     ACTIONS,
     SEQUENCE_LENGTH,
     MODEL_PATH,
+    StabilityFilter,
     mediapipe_detection,
     extract_keypoints,
 )
@@ -114,8 +115,7 @@ async def sign_detection(websocket: WebSocket):
     mp_holistic = mp.solutions.holistic
     holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5)
     keypoint_buffer = deque(maxlen=SEQUENCE_LENGTH)
-    prediction_history = deque(maxlen=STABILITY_WINDOW)
-    current_sign = None
+    stability_filter = StabilityFilter(window_size=STABILITY_WINDOW, threshold=CONFIDENCE_THRESHOLD)
     frames_processed = 0
 
     try:
@@ -181,22 +181,12 @@ async def sign_detection(websocket: WebSocket):
             all_predictions = {str(ACTIONS[i]): round(float(predictions[i]), 4) for i in range(len(ACTIONS))}
 
             # Stability filter
-            is_stable = False
-            is_new_sign = False
+            stability_result = stability_filter.update(predicted_sign, confidence)
+            is_stable = stability_result["is_stable"]
+            is_new_sign = stability_result["is_new_sign"]
 
-            if confidence >= CONFIDENCE_THRESHOLD:
-                prediction_history.append(predicted_sign)
-
-                if (len(prediction_history) == STABILITY_WINDOW
-                        and len(set(prediction_history)) == 1):
-                    is_stable = True
-                    stable_sign = prediction_history[0]
-                    if stable_sign != current_sign:
-                        is_new_sign = True
-                        current_sign = stable_sign
-                        logger.info(f"New sign detected: {stable_sign} ({confidence:.2f})")
-            else:
-                prediction_history.append(None)
+            if is_new_sign:
+                logger.info(f"New sign detected: {stability_result['sign']} ({confidence:.2f})")
 
             await websocket.send_json({
                 "type": "sign_prediction",

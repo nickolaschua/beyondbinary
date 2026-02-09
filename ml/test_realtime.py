@@ -21,6 +21,7 @@ from utils import (
     ACTIONS,
     SEQUENCE_LENGTH,
     MODEL_PATH,
+    StabilityFilter,
     mediapipe_detection,
     draw_landmarks,
     extract_keypoints,
@@ -102,8 +103,8 @@ def main():
     # Sliding window buffer for keypoint sequences
     keypoint_buffer = deque(maxlen=SEQUENCE_LENGTH)
 
-    # Stability filter: track last N predictions
-    prediction_history = deque(maxlen=STABILITY_WINDOW)
+    # Stability filter
+    stability_filter = StabilityFilter(window_size=STABILITY_WINDOW, threshold=CONFIDENCE_THRESHOLD)
 
     # Detected sentence
     sentence = []
@@ -152,25 +153,15 @@ def main():
                 # Draw probability bars
                 draw_probability_bars(image, predictions)
 
-                # Apply confidence threshold
-                if confidence >= CONFIDENCE_THRESHOLD:
-                    prediction_history.append(predicted_sign)
+                # Stability filter
+                result = stability_filter.update(predicted_sign, float(confidence))
 
-                    # Stability filter: all last N predictions must be the same
-                    if (len(prediction_history) == STABILITY_WINDOW
-                            and len(set(prediction_history)) == 1):
-
-                        stable_sign = prediction_history[0]
-
-                        # Deduplication: don't add same sign consecutively
-                        if not sentence or sentence[-1] != stable_sign:
-                            sentence.append(stable_sign)
-                            if len(sentence) > MAX_SENTENCE_LENGTH:
-                                sentence = sentence[-MAX_SENTENCE_LENGTH:]
-                            print(f"Detected: {stable_sign} ({confidence:.2f})")
-                else:
-                    # Below threshold — push empty to break stability streak
-                    prediction_history.append(None)
+                if result["is_new_sign"]:
+                    stable_sign = result["sign"]
+                    sentence.append(stable_sign)
+                    if len(sentence) > MAX_SENTENCE_LENGTH:
+                        sentence = sentence[-MAX_SENTENCE_LENGTH:]
+                    print(f"Detected: {stable_sign} ({confidence:.2f})")
 
             # Draw sentence bar on top
             draw_sentence_bar(image, sentence)

@@ -5,8 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AudioAssistButton } from "@/components/AudioAssistButton";
 import { BrailleCell } from "@/components/BrailleCell";
+import { VideoCall } from "@/components/VideoCall";
 import { textToBrailleCells, type BrailleCellPattern } from "@/braille/mapping";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useWebRTC } from "@/hooks/useWebRTC";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
 import { getProfile, type UserProfileId } from "@/lib/profile";
 import { writeSessionSummary } from "@/lib/session";
@@ -64,15 +66,27 @@ export function LiveWorkspace({
     `${profile.label} live workspace. Turn camera on to stream sign detection; use quick replies for faster responses.`
   );
 
+  // When page is loaded over HTTPS, upgrade backend URLs to https/wss (mixed content rule)
+  const effectiveApiUrl = useMemo(() => {
+    if (typeof window === "undefined") return apiUrl;
+    if (window.location.protocol !== "https:") return apiUrl;
+    return apiUrl.replace(/^http:\/\//i, "https://");
+  }, [apiUrl]);
+  const effectiveWsUrl = useMemo(() => {
+    if (typeof window === "undefined") return wsUrl;
+    if (window.location.protocol !== "https:") return wsUrl;
+    return wsUrl.replace(/^ws:\/\//i, "wss://");
+  }, [wsUrl]);
+
   const wsEndpoint = useMemo(() => {
-    const url = new URL(`${wsUrl.replace(/\/$/, "")}/ws/sign-detection`);
+    const url = new URL(`${effectiveWsUrl.replace(/\/$/, "")}/ws/sign-detection`);
     if (apiKey.trim()) url.searchParams.set("api_key", apiKey.trim());
     return url.toString();
-  }, [apiKey, wsUrl]);
+  }, [apiKey, effectiveWsUrl]);
 
   const conversationWsUrl = useMemo(
-    () => `${apiUrl.replace(/^http/, "ws").replace(/\/$/, "")}/ws/conversation`,
-    [apiUrl]
+    () => `${effectiveApiUrl.replace(/^http/, "ws").replace(/\/$/, "")}/ws/conversation`,
+    [effectiveApiUrl]
   );
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -80,11 +94,15 @@ export function LiveWorkspace({
   const frameTimerRef = useRef<number | null>(null);
   const startedAtRef = useRef<string>(new Date().toISOString());
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const localVideoStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunkIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const startSendingAudioRef = useRef<() => void>(() => {});
   const lastQuickReplyUpdateRef = useRef<number>(0);
+  const pendingWebRtcOfferRef = useRef<{ fromPeerId: string; offer: RTCSessionDescriptionInit } | null>(null);
+  const pendingWebRtcAnswerRef = useRef<RTCSessionDescriptionInit | null>(null);
+  const pendingWebRtcCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
 
   const [cameraOn, setCameraOn] = useState(false);
   const NO_SIGN_YET = "—";
@@ -104,6 +122,9 @@ export function LiveWorkspace({
   const [errors, setErrors] = useState<string[]>([]);
   const [customReply, setCustomReply] = useState("");
   const [quickRepliesUsed, setQuickRepliesUsed] = useState(0);
+  const [remotePeerId, setRemotePeerId] = useState<string | null>(null);
+  const [localStreamState, setLocalStreamState] = useState<MediaStream | null>(null);
+  const [webrtcTrigger, setWebrtcTrigger] = useState(0);
 
   const useBraille = profileId === "blind" || profileId === "deafblind";
   const speakIncoming = profileId === "blind";
@@ -201,7 +222,7 @@ export function LiveWorkspace({
           }
           break;
         case "summary":
-          if (msg.text != null && profileId === "blind") speakText(String(msg.text), apiUrl);
+          if (msg.text != null && profileId === "blind") speakText(String(msg.text), effectiveApiUrl);
           break;
         case "chat_message":
           setChatMessages((prev) => [...prev, { sender: (msg.sender as "local" | "remote") ?? "remote", text: String(msg.text ?? ""), tts: Boolean(msg.tts) }]);
@@ -218,11 +239,57 @@ export function LiveWorkspace({
         case "error":
           setErrors((prev) => [...prev.slice(-5), String(msg.message ?? "Unknown error")]);
           break;
+        case "peer_joined": {
+          const peerId = String(msg.peer_id ?? "");
+          console.log("[WebRTC] Peer joined:", peerId);
+          if (peerId) {
+            setRemotePeerId(peerId);
+            // Offer will be created in useEffect
+          }
+          break;
+        }
+        case "webrtc_offer": {
+          const fromPeerId = String(msg.from_peer_id ?? "");
+          const offer = msg.offer as RTCSessionDescriptionInit;
+          console.log("[WebRTC] Received offer from:", fromPeerId);
+          if (fromPeerId && offer) {
+            setRemotePeerId(fromPeerId);
+            // Store for async WebRTC handling
+            pendingWebRtcOfferRef.current = { fromPeerId, offer };
+            setWebrtcTrigger(prev => prev + 1);
+          }
+          break;
+        }
+        case "webrtc_answer": {
+          const answer = msg.answer as RTCSessionDescriptionInit;
+          console.log("[WebRTC] Received answer");
+          if (answer) {
+            pendingWebRtcAnswerRef.current = answer;
+            setWebrtcTrigger(prev => prev + 1);
+          }
+          break;
+        }
+        case "webrtc_ice_candidate": {
+          const candidate = msg.candidate as RTCIceCandidateInit;
+          console.log("[WebRTC] Received ICE candidate");
+          if (candidate) {
+            pendingWebRtcCandidatesRef.current.push(candidate);
+            setWebrtcTrigger(prev => prev + 1);
+          }
+          break;
+        }
+        case "peer_left": {
+          setRemotePeerId(null);
+          pendingWebRtcOfferRef.current = null;
+          pendingWebRtcAnswerRef.current = null;
+          pendingWebRtcCandidatesRef.current = [];
+          break;
+        }
         default:
           break;
       }
     },
-    [apiUrl, profileId]
+    [effectiveApiUrl, profileId]
   );
 
   const { isConnected, connect, disconnect, sendJSON } = useWebSocket({
@@ -252,7 +319,7 @@ export function LiveWorkspace({
         if (useBraille) {
           setBrailleCells((prev) => [...prev, ...textToBrailleCells(`${cleanSign} `)]);
         }
-        if (speakIncoming) speakText(cleanSign, apiUrl);
+        if (speakIncoming) speakText(cleanSign, effectiveApiUrl);
       }
     },
   });
@@ -273,6 +340,115 @@ export function LiveWorkspace({
   useEffect(() => {
     sendConvJSONRef.current = sendConvJSON;
   }, [sendConvJSON]);
+
+  // WebRTC hook - initialized after WebSocket hooks
+  const {
+    remoteStream,
+    connectionState,
+    createOffer,
+    handleOffer,
+    handleAnswer,
+    handleIceCandidate,
+    closePeerConnection,
+  } = useWebRTC({
+    localStream: localStreamState,
+    onIceCandidate: (candidate) => {
+      if (remotePeerId && sendConvJSON) {
+        sendConvJSON({
+          type: "webrtc_ice_candidate",
+          target_peer_id: remotePeerId,
+          candidate: candidate.toJSON(),
+        });
+      }
+    },
+  });
+
+  // Store WebRTC handlers in refs
+  const handleOfferRef = useRef(handleOffer);
+  const handleAnswerRef = useRef(handleAnswer);
+  const handleIceCandidateRef = useRef(handleIceCandidate);
+
+  useEffect(() => {
+    handleOfferRef.current = handleOffer;
+  }, [handleOffer]);
+
+  useEffect(() => {
+    handleAnswerRef.current = handleAnswer;
+  }, [handleAnswer]);
+
+  useEffect(() => {
+    handleIceCandidateRef.current = handleIceCandidate;
+  }, [handleIceCandidate]);
+
+  // Process pending WebRTC messages
+  useEffect(() => {
+    if (pendingWebRtcOfferRef.current) {
+      const { fromPeerId, offer } = pendingWebRtcOfferRef.current;
+      pendingWebRtcOfferRef.current = null;
+      handleOfferRef.current(offer).then((answer) => {
+        const sendJSON = sendConvJSONRef2.current;
+        if (sendJSON) {
+          sendJSON({
+            type: "webrtc_answer",
+            target_peer_id: fromPeerId,
+            answer: answer,
+          });
+        }
+      });
+    }
+
+    if (pendingWebRtcAnswerRef.current) {
+      const answer = pendingWebRtcAnswerRef.current;
+      pendingWebRtcAnswerRef.current = null;
+      handleAnswerRef.current(answer);
+    }
+
+    if (pendingWebRtcCandidatesRef.current.length > 0) {
+      const candidates = [...pendingWebRtcCandidatesRef.current];
+      pendingWebRtcCandidatesRef.current = [];
+      candidates.forEach((candidate) => {
+        handleIceCandidateRef.current(candidate);
+      });
+    }
+  }, [webrtcTrigger]);
+
+  // Handle peer_joined event to create offer
+  const createOfferRef = useRef(createOffer);
+  const sendConvJSONRef2 = useRef(sendConvJSON);
+
+  useEffect(() => {
+    createOfferRef.current = createOffer;
+  }, [createOffer]);
+
+  useEffect(() => {
+    sendConvJSONRef2.current = sendConvJSON;
+  }, [sendConvJSON]);
+
+  useEffect(() => {
+    if (remotePeerId && localStreamState) {
+      console.log("[WebRTC] Creating offer for peer:", remotePeerId, "with stream:", !!localStreamState);
+      const sendJSON = sendConvJSONRef2.current;
+      if (sendJSON) {
+        createOfferRef.current().then((offer) => {
+          console.log("[WebRTC] Sending offer to peer:", remotePeerId);
+          sendJSON({
+            type: "webrtc_offer",
+            target_peer_id: remotePeerId,
+            offer: offer,
+          });
+        });
+      }
+    } else {
+      console.log("[WebRTC] Not creating offer - remotePeerId:", remotePeerId, "localStream:", !!localStreamState);
+    }
+  }, [remotePeerId, localStreamState]);
+
+  // Handle peer_left event
+  useEffect(() => {
+    if (!remotePeerId) {
+      closePeerConnection();
+    }
+  }, [remotePeerId, closePeerConnection]);
 
   const backendProfileType = profileId === "blind" ? "blind" : "deaf";
 
@@ -406,18 +582,31 @@ export function LiveWorkspace({
   }, [convConnected, startSendingAudio]);
 
   const startCamera = async () => {
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setErrors((prev) => [
+        ...prev.slice(-5),
+        "Camera requires a secure page. Use https://localhost:3000 (run: npm run dev, not dev:http).",
+      ]);
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720, facingMode: "user" },
-        audio: false,
+        audio: true,
       });
+      localVideoStreamRef.current = stream;
+      setLocalStreamState(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
         setCameraOn(true);
       }
-    } catch {
-      setErrors((prev) => [...prev.slice(-5), "Camera permission denied"]);
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Camera blocked. Allow camera for this site in browser settings, or use https://localhost:3000 (npm run dev)."
+          : "Camera permission denied. Use https://localhost:3000 (npm run dev) for camera support.";
+      setErrors((prev) => [...prev.slice(-5), msg]);
     }
   };
 
@@ -425,6 +614,9 @@ export function LiveWorkspace({
     const stream = videoRef.current?.srcObject as MediaStream | null;
     stream?.getTracks().forEach((track) => track.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
+    localVideoStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localVideoStreamRef.current = null;
+    setLocalStreamState(null);
     setCameraOn(false);
   };
 
@@ -482,7 +674,7 @@ export function LiveWorkspace({
   const sendReply = (replyOrLabel: string) => {
     setQuickRepliesUsed((prev) => prev + 1);
     const spokenText = backendQuickReplies.length > 0 ? getSpokenTextForReply(replyOrLabel) : replyOrLabel;
-    speakText(spokenText, apiUrl);
+    speakText(spokenText, effectiveApiUrl);
   };
 
   const combinedTranscriptText = useMemo(
@@ -552,7 +744,13 @@ export function LiveWorkspace({
         <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
           <h2 className="text-2xl font-semibold text-slate-100">Conversation input</h2>
           <div className="mt-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
-            <video ref={videoRef} className="aspect-[16/9] w-full object-cover" muted playsInline />
+            <VideoCall
+              localStream={localStreamState}
+              remoteStream={remoteStream}
+              className="w-full"
+            />
+            {/* Hidden video element for sign detection */}
+            <video ref={videoRef} className="hidden" muted playsInline />
           </div>
           <canvas ref={canvasRef} className="hidden" />
           <div className="mt-4 flex flex-wrap gap-2">

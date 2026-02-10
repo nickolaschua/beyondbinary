@@ -150,7 +150,6 @@ export default function OnboardingPage() {
     recognition.continuous = false;
     recognition.interimResults = false;
 
-    setListening(true);
     setVoiceStatus("Listening... Say: I am blind, I am deaf, I am mute, or I am deafblind.");
 
     recognition.onresult = (event) => {
@@ -170,7 +169,7 @@ export default function OnboardingPage() {
     };
 
     recognition.onend = () => {
-      setListening(false);
+      // Voice recognition ended
     };
 
     recognition.start();

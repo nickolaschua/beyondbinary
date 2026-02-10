@@ -22,6 +22,18 @@ open test_frontend.html
 
 **The backend is already running!** Just open the test page and try it out.
 
+### Running with HTTPS (for SenseAI frontend + camera / remote connections)
+
+When the frontend is served over HTTPS, the backend must use HTTPS/WSS too (browsers block mixed content). Use the same mkcert certs as the frontend:
+
+```bash
+cd backend
+source venv/bin/activate
+./run_https.sh
+```
+
+Requires `localhost+3-key.pem` and `localhost+3.pem` in `senseai-frontend/` (run `mkcert localhost 127.0.0.1 ::1` there first). Then use `https://YOUR_IP:8000` and `wss://YOUR_IP:8000` in the live page URL (or pass `api=` / `ws=` with https/wss; the frontend will upgrade them when the page is HTTPS).
+
 ---
 
 ## 📚 Documentation

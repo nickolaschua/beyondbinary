@@ -256,18 +256,37 @@ async def conversation_ws(websocket: WebSocket):
                 room_id = new_room
                 if room_id not in _room_registry:
                     _room_registry[room_id] = []
+
+                # Get existing peers before adding this connection
+                existing_peers = [p for p in _room_registry.get(room_id, []) if p["ws"] is not websocket]
+
                 _room_registry[room_id].append(conn_info)
                 await websocket.send_json({"type": "status", "message": f"room_set:{room_id}"})
-                # Notify existing peers so one side can create an offer.
-                for peer in _room_registry.get(room_id, []):
-                    if peer["ws"] is websocket:
-                        continue
+
+                print(f"[WebRTC] {client_id} joined room {room_id}. Room now has {len(_room_registry[room_id])} peers.")
+
+                # Notify this connection about existing peers
+                for peer in existing_peers:
                     try:
+                        print(f"[WebRTC] Notifying {client_id} about existing peer {peer['client_id']}")
+                        await websocket.send_json({
+                            "type": "peer_joined",
+                            "peer_id": peer["client_id"],
+                        })
+                    except Exception as e:
+                        print(f"[WebRTC] Error notifying about existing peer: {e}")
+                        continue
+
+                # Notify existing peers about this new connection
+                for peer in existing_peers:
+                    try:
+                        print(f"[WebRTC] Notifying {peer['client_id']} about new peer {client_id}")
                         await peer["ws"].send_json({
                             "type": "peer_joined",
                             "peer_id": client_id,
                         })
-                    except Exception:
+                    except Exception as e:
+                        print(f"[WebRTC] Error notifying peer: {e}")
                         continue
                 continue
 

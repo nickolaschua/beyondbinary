@@ -50,12 +50,14 @@ for stream in "${STREAMS[@]}"; do
   echo "  Copying TODO-$stream.md → docs/TODO.md"
   cp "$REPO_ROOT/docs/streams/TODO-$stream.md" "$TREE_PATH/docs/TODO.md"
 
-  # Symlink the venv so each worktree can run tests
+  # Link the venv so each worktree can run tests
   if [ -d "$REPO_ROOT/ml/venv" ] && [ ! -e "$TREE_PATH/ml/venv" ]; then
     echo "  Linking ml/venv"
-    # Use junction on Windows (works without admin), symlink on Linux/Mac
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
-      cmd //c "mklink /J \"$(cygpath -w "$TREE_PATH/ml/venv")\" \"$(cygpath -w "$REPO_ROOT/ml/venv")\""
+      # Windows: use junction via PowerShell (works without admin, handles paths correctly)
+      WIN_TARGET="$(cygpath -w "$REPO_ROOT/ml/venv")"
+      WIN_LINK="$(cygpath -w "$TREE_PATH/ml/venv")"
+      powershell -Command "New-Item -ItemType Junction -Path '$WIN_LINK' -Target '$WIN_TARGET'" > /dev/null
     else
       ln -s "$REPO_ROOT/ml/venv" "$TREE_PATH/ml/venv"
     fi

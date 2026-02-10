@@ -14,6 +14,7 @@ Exit codes:
     1 - Critical failure: any sign has <15/30 hands detected
 """
 
+import argparse
 import os
 import sys
 import numpy as np
@@ -38,7 +39,20 @@ def check_hands_detected(keypoints):
     return np.any(lh != 0) or np.any(rh != 0)
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="SenseAI Data Verification")
+    parser.add_argument("--data_path", type=str, default=DATA_PATH,
+                        help="Path to data directory (default: utils.DATA_PATH)")
+    parser.add_argument("--min_hands", type=int, default=15,
+                        help="Minimum hands detected threshold (default: 15)")
+    return parser.parse_args(argv)
+
+
 def main():
+    args = parse_args()
+    data_path = args.data_path
+    min_hands = args.min_hands
+
     print("=" * 70)
     print("SenseAI Data Verification")
     print("=" * 70)
@@ -51,7 +65,7 @@ def main():
     warnings = []
 
     for action in ACTIONS:
-        action_dir = os.path.join(DATA_PATH, action)
+        action_dir = os.path.join(data_path, action)
 
         if not os.path.exists(action_dir):
             print(f"{action:15s} |  0 sequences | shape: N/A    | DIRECTORY NOT FOUND")
@@ -89,7 +103,7 @@ def main():
         print(f"{action:15s} | {num_sequences:2d} sequences | shape: {shape} | hands detected: {hands_count}/{num_sequences}")
 
         # Check thresholds
-        if hands_count < 15:
+        if hands_count < min_hands:
             critical_failure = True
             warnings.append(f"CRITICAL: '{action}' has only {hands_count}/{num_sequences} "
                             f"hands detected — re-record immediately")

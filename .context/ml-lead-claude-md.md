@@ -20,6 +20,50 @@ You are the ML lead for SenseAI, building a real-time ASL (American Sign Languag
 
 ---
 
+## REFERENCE IMPLEMENTATIONS (Research Findings)
+
+Three open-source repos were evaluated as potential starting points:
+
+### 1. nicknochnack/ActionDetectionforSignLanguage (Nicholas Renotte — Original)
+- **Signs:** 3 only (hello, thanks, iloveyou)
+- **Architecture:** 3-layer LSTM (64→128→64), `relu` activation, 596,675 params
+- **Training:** 2000 epochs, no early stopping, 95/5 train/test split
+- **Inference:** Confidence threshold 0.8, NO temporal stability filter
+- **Keypoint order:** `[pose, face, lh, rh]` ← WE USE THIS ORDER
+- **Ships:** `action.h5` (~6.9 MB)
+- **Pros:** Explicit pip install with pinned versions, correct evaluation on X_test
+- **Cons:** relu activation for LSTM (suboptimal), no regularization, no stability filter, massive overfitting (2000 epochs on 85 training samples)
+
+### 2. SomyanshAvasthi/Sign-Language-Detection-using-MediaPipe (Cleaned-Up Derivative)
+- **Signs:** Same 3 (hello, thanks, iloveyou)
+- **Architecture:** Identical to nicknochnack
+- **Training:** 330 epochs (more reasonable), same split
+- **Inference:** Threshold 0.5 + **10-frame temporal stability filter** (last 10 predictions must agree)
+- **Keypoint order:** `[pose, lh, rh, face]` ← DIFFERENT FROM OURS, models not interchangeable
+- **Ships:** `action.h5` (~6.9 MB), includes training data folder
+- **Pros:** Stability filter (reduces flickering), updated MediaPipe API (`FACEMESH_CONTOURS`), works on Python 3.12 + TF 2.15+
+- **Cons:** Bug — evaluates on X_train not X_test. Stability filter has edge case bug with mixed predictions.
+
+### 3. SLRNet (Khushi-739, June 2025 paper)
+- **Signs:** 26 ASL letters + 10 functional words
+- **Architecture:** MediaPipe Holistic + stacked LSTM, 30-frame sequences
+- **Accuracy:** 86.7% validation
+- **Fully open source:** https://github.com/Khushi-739/SLRNet
+
+### Decision: Train From Scratch
+Neither `.h5` is worth fine-tuning because:
+- Both trained on only 3 signs / 90 sequences — LSTM weights are too narrow to transfer meaningfully
+- Our model needs `Dense(10)` output layer vs their `Dense(3)` — must replace final layer anyway
+- LSTM trains in ~10 min on Colab GPU — fresh training is trivial
+- Our architecture is already better (tanh, BatchNorm, Dropout, EarlyStopping)
+
+**What we adopt from these repos:**
+- SomyanshAvasthi's temporal stability filter concept (adapted to 8 frames instead of 10)
+- nicknochnack's `[pose, face, lh, rh]` keypoint concatenation order
+- The general pipeline structure: collect → train → test → serve
+
+---
+
 ## ENVIRONMENT SETUP (Windows)
 
 ### CRITICAL: Python Version

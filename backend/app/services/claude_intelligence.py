@@ -19,6 +19,25 @@ _client = Groq(api_key=settings.GROQ_API_KEY)
 MODEL = "llama-3.3-70b-versatile"  # Latest Llama model, fast, good at JSON, free
 
 
+def _normalize_quick_replies(items: list) -> list:
+    """Keep quick-reply labels readable and bounded for UI buttons."""
+    normalized = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label", "")).strip()
+        spoken = str(item.get("spoken_text", "")).strip()
+        if not label:
+            continue
+        if not spoken:
+            spoken = label
+        # Target slightly longer labels while preventing giant button text.
+        if len(label) > 40:
+            label = label[:40].rstrip() + "…"
+        normalized.append({"label": label, "spoken_text": spoken})
+    return normalized[:4]
+
+
 async def process_transcript(
     transcript: str,
     tone_label: str = "speaking",
@@ -51,7 +70,7 @@ Response format:
 {
     "simplified": "Plain language version of what was said. Replace medical/legal/technical jargon with simple words. Keep it concise.",
     "quick_replies": [
-        {"label": "Short button text (max 6 words)", "spoken_text": "Natural conversational phrasing that will be spoken aloud by TTS"},
+        {"label": "Button text (aim for 20-40 characters)", "spoken_text": "Natural conversational phrasing that will be spoken aloud by TTS"},
         {"label": "Another option", "spoken_text": "Another natural phrasing"}
     ],
     "summary": "One sentence summary of what was just said, suitable for audio delivery to a blind user."
@@ -59,7 +78,7 @@ Response format:
 
 Rules:
 - Generate 3-4 quick replies that are contextually relevant to what was just said
-- Quick reply labels should be SHORT (max 6 words) — they appear on small buttons
+- Quick reply labels should be concise but more descriptive (target 20-40 characters)
 - Quick reply spoken_text should sound natural when spoken aloud by TTS
 - Always include one reply that asks for clarification and one that acknowledges
 - The simplified text should be understandable by a 12-year-old
@@ -99,7 +118,7 @@ User profile: {profile_type}"""
 
         return {
             "simplified": result.get("simplified", transcript),
-            "quick_replies": result.get("quick_replies", []),
+            "quick_replies": _normalize_quick_replies(result.get("quick_replies", [])),
             "summary": result.get("summary", transcript),
         }
 
@@ -109,7 +128,7 @@ User profile: {profile_type}"""
         return {
             "simplified": transcript,
             "quick_replies": [
-                {"label": "I understand", "spoken_text": "I understand, thank you."},
+                {"label": "I understand", "spoken_text": "I understand."},
                 {"label": "Can you explain?", "spoken_text": "Could you explain that in simpler terms?"},
                 {"label": "One moment", "spoken_text": "One moment please, let me think about that."},
             ],
@@ -120,7 +139,7 @@ User profile: {profile_type}"""
         return {
             "simplified": transcript,
             "quick_replies": [
-                {"label": "I understand", "spoken_text": "I understand, thank you."},
+                {"label": "I understand", "spoken_text": "I understand."},
                 {"label": "Can you repeat?", "spoken_text": "Could you repeat that please?"},
             ],
             "summary": transcript,

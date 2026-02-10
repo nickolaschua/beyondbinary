@@ -23,7 +23,7 @@ class PeerConnection {
     // Handle ICE candidates
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
-        this.signalingClient.sendIceCandidate(this.peerId, event.candidate);
+        this.signalingClient.sendIceCandidate(event.candidate, this.peerId);
       }
     };
 

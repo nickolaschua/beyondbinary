@@ -14,6 +14,7 @@ class Settings:
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    STT_PROVIDER: str = os.getenv("STT_PROVIDER", "groq").lower()  # "groq" | "openai"
 
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")

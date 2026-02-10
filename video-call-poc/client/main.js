@@ -1,7 +1,6 @@
 // client/main.js
 // Orchestration: socket + media + peer
 
-import { SignalingClient } from './signaling.js';
 import { getLocalMedia } from './media.js';
 import { PeerConnection } from './peer.js';
 import { BackendConnector } from './ai/backendConnector.js';
@@ -21,7 +20,6 @@ import { pushChunk, startNewStream, setMuted, resumeContext } from './ai/ttsPlay
 
 class VideoCallApp {
   constructor() {
-    this.signaling = new SignalingClient('http://localhost:3001');
     this.localStream = null;
     this.peerConnection = null;
     this.controls = null;
@@ -128,7 +126,7 @@ class VideoCallApp {
       }
     }
 
-    // Setup signaling handlers (required for remote connection)
+    // Setup signaling handlers over backend WebSocket
     this.setupSignalingHandlers();
 
     setBlindMode(profileType === 'blind');
@@ -154,52 +152,62 @@ class VideoCallApp {
   }
   
   setupSignalingHandlers() {
-    this.signaling.on('room-joined', ({ roomId }) => {
-      console.log('Joined room:', roomId);
-    });
-    
-    this.signaling.on('room-full', () => {
-      alert('Room is full (2/2)');
-    });
-    
-    this.signaling.on('peer-joined', async ({ peerId }) => {
+    this.backendConnector.onPeerJoined = async ({ peerId }) => {
       console.log('Peer joined:', peerId);
+      if (this.peerConnection) {
+        this.peerConnection.close();
+        this.peerConnection = null;
+      }
 
       // Create peer connection and send offer
-      this.peerConnection = new PeerConnection(peerId, this.localStream, this.signaling);
+      this.peerConnection = new PeerConnection(peerId, this.localStream, {
+        sendIceCandidate: (candidate, targetPeerId) => {
+          this.backendConnector.sendWebrtcIceCandidate(candidate, targetPeerId);
+        },
+      });
       this.peerConnection.onRemoteStream = (remoteStream) => {
         attachRemoteStream(remoteStream);
       };
 
       const offer = await this.peerConnection.createOffer();
-      this.signaling.sendOffer(peerId, offer);
-    });
+      this.backendConnector.sendWebrtcOffer(offer, peerId);
+    };
 
-    this.signaling.on('offer', async ({ from, offer }) => {
-      console.log('Received offer from:', from);
+    this.backendConnector.onWebrtcOffer = async ({ fromPeerId, offer }) => {
+      console.log('Received offer from:', fromPeerId);
+      if (this.peerConnection) {
+        this.peerConnection.close();
+        this.peerConnection = null;
+      }
 
       // Create peer connection and send answer
-      this.peerConnection = new PeerConnection(from, this.localStream, this.signaling);
+      this.peerConnection = new PeerConnection(fromPeerId, this.localStream, {
+        sendIceCandidate: (candidate, targetPeerId) => {
+          this.backendConnector.sendWebrtcIceCandidate(candidate, targetPeerId);
+        },
+      });
       this.peerConnection.onRemoteStream = (remoteStream) => {
         attachRemoteStream(remoteStream);
       };
 
       const answer = await this.peerConnection.handleOffer(offer);
-      this.signaling.sendAnswer(from, answer);
-    });
-    
-    this.signaling.on('answer', async ({ from, answer }) => {
-      console.log('Received answer from:', from);
+      this.backendConnector.sendWebrtcAnswer(answer, fromPeerId);
+    };
+
+    this.backendConnector.onWebrtcAnswer = async ({ fromPeerId, answer }) => {
+      console.log('Received answer from:', fromPeerId);
+      if (!this.peerConnection) return;
       await this.peerConnection.handleAnswer(answer);
-    });
-    
-    this.signaling.on('ice-candidate', async ({ from, candidate }) => {
+    };
+
+    this.backendConnector.onWebrtcIceCandidate = async ({ fromPeerId, candidate }) => {
+      console.log('Received ICE candidate from:', fromPeerId);
       if (this.peerConnection) {
         await this.peerConnection.handleIceCandidate(candidate);
       }
-    });
-    
-    this.signaling.on('peer-left', () => {
+    };
+
+    this.backendConnector.onPeerLeft = () => {
       console.log('Peer left');
       if (this.peerConnection) {
         this.peerConnection.close();
@@ -207,11 +215,10 @@ class VideoCallApp {
       }
       const remoteVideo = document.getElementById('remote-video');
       if (remoteVideo) remoteVideo.srcObject = null;
-    });
+    };
   }
   
   joinRoom(roomId) {
-    this.signaling.joinRoom(roomId);
     this.backendConnector.setRoom(roomId);
   }
 }

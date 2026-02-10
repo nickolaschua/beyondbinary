@@ -27,6 +27,7 @@ FORMAT_TO_EXT = {
     "webm": "webm",
     "mp4": "m4a",
     "m4a": "m4a",
+    "ogg": "ogg",
     "mp3": "mp3",
     "wav": "wav",
 }

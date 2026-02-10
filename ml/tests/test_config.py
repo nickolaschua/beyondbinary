@@ -81,3 +81,64 @@ class TestConfigEnvOverrides:
             if key.startswith("SENSEAI_"):
                 del os.environ[key]
         importlib.reload(utils)
+
+
+class TestConfigInvalidEnvVars:
+    """Verify invalid environment variable values fall back to defaults."""
+
+    def test_invalid_port_falls_back_to_default(self, monkeypatch):
+        """Non-numeric SENSEAI_PORT should fall back to 8001."""
+        monkeypatch.setenv("SENSEAI_PORT", "abc")
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.PORT == 8001
+
+    def test_invalid_confidence_threshold_falls_back_to_default(self, monkeypatch):
+        """Non-numeric SENSEAI_CONFIDENCE_THRESHOLD should fall back to 0.7."""
+        monkeypatch.setenv("SENSEAI_CONFIDENCE_THRESHOLD", "notanumber")
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CONFIDENCE_THRESHOLD == 0.7
+
+    def test_invalid_stability_window_falls_back_to_default(self, monkeypatch):
+        """Non-numeric SENSEAI_STABILITY_WINDOW should fall back to 8."""
+        monkeypatch.setenv("SENSEAI_STABILITY_WINDOW", "xyz")
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.STABILITY_WINDOW == 8
+
+    def test_empty_port_falls_back_to_default(self, monkeypatch):
+        """Empty string SENSEAI_PORT should fall back to 8001."""
+        monkeypatch.setenv("SENSEAI_PORT", "")
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.PORT == 8001
+
+    def test_valid_port_still_works(self, monkeypatch):
+        """Valid numeric SENSEAI_PORT should still be parsed correctly."""
+        monkeypatch.setenv("SENSEAI_PORT", "3000")
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.PORT == 3000
+
+    def test_valid_confidence_threshold_still_works(self, monkeypatch):
+        """Valid numeric SENSEAI_CONFIDENCE_THRESHOLD should still be parsed correctly."""
+        monkeypatch.setenv("SENSEAI_CONFIDENCE_THRESHOLD", "0.95")
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CONFIDENCE_THRESHOLD == 0.95
+
+    def teardown_method(self):
+        """Reload utils with clean environment after each test."""
+        import importlib
+        import utils
+        for key in list(os.environ):
+            if key.startswith("SENSEAI_"):
+                del os.environ[key]
+        importlib.reload(utils)

@@ -34,11 +34,51 @@ _ML_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(_ML_DIR, 'MP_Data')
 MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.h5')
 
+# --- Safe env var parsing helpers ---
+
+def _safe_int(env_key: str, default: int) -> int:
+    """Parse an environment variable as int, returning *default* on failure.
+
+    Args:
+        env_key: Name of the environment variable.
+        default: Value returned when the variable is unset or non-numeric.
+
+    Returns:
+        Parsed integer or *default*.
+    """
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _safe_float(env_key: str, default: float) -> float:
+    """Parse an environment variable as float, returning *default* on failure.
+
+    Args:
+        env_key: Name of the environment variable.
+        default: Value returned when the variable is unset or non-numeric.
+
+    Returns:
+        Parsed float or *default*.
+    """
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 # --- Server / runtime configuration (overridable via environment variables) ---
 HOST = os.environ.get("SENSEAI_HOST", "0.0.0.0")
-PORT = int(os.environ.get("SENSEAI_PORT", "8001"))
-CONFIDENCE_THRESHOLD = float(os.environ.get("SENSEAI_CONFIDENCE_THRESHOLD", "0.7"))
-STABILITY_WINDOW = int(os.environ.get("SENSEAI_STABILITY_WINDOW", "8"))
+PORT = _safe_int("SENSEAI_PORT", 8001)
+CONFIDENCE_THRESHOLD = _safe_float("SENSEAI_CONFIDENCE_THRESHOLD", 0.7)
+STABILITY_WINDOW = _safe_int("SENSEAI_STABILITY_WINDOW", 8)
 
 # MediaPipe setup
 mp_holistic = mp.solutions.holistic

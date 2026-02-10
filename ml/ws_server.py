@@ -58,6 +58,9 @@ app.add_middleware(
 # --- Global model (loaded once at startup) ---
 model = None
 
+# --- Inference timing ---
+inference_times = deque(maxlen=100)
+
 
 @app.on_event("startup")
 async def load_model():
@@ -75,11 +78,13 @@ async def load_model():
 
 @app.get("/health")
 async def health():
+    avg_ms = round(sum(inference_times) / len(inference_times), 1) if inference_times else 0
     return {
         "status": "ok",
         "model_loaded": model is not None,
         "actions": list(ACTIONS),
         "sequence_length": SEQUENCE_LENGTH,
+        "avg_inference_ms": avg_ms,
     }
 
 
@@ -167,7 +172,8 @@ async def sign_detection(websocket: WebSocket):
             if frame is None:
                 continue
 
-            # MediaPipe detection
+            # MediaPipe detection (timed)
+            t0 = time.perf_counter()
             _, results = mediapipe_detection(frame, holistic)
 
             # Check if hands detected
@@ -192,6 +198,12 @@ async def sign_detection(websocket: WebSocket):
             # Run prediction
             sequence = np.expand_dims(np.array(list(keypoint_buffer)), axis=0)
             predictions = model.predict(sequence, verbose=0)[0]
+            t1 = time.perf_counter()
+
+            total_inference_ms = round((t1 - t0) * 1000, 1)
+            inference_times.append(total_inference_ms)
+            if total_inference_ms > 200:
+                logger.warning("Inference took %.1fms (exceeds 200ms threshold)", total_inference_ms)
 
             predicted_idx = int(np.argmax(predictions))
             confidence = float(predictions[predicted_idx])
@@ -217,6 +229,7 @@ async def sign_detection(websocket: WebSocket):
                 "hands_detected": hands_detected,
                 "all_predictions": all_predictions,
                 "frames_processed": frames_processed,
+                "total_inference_ms": total_inference_ms,
             })
 
     except WebSocketDisconnect:

@@ -101,6 +101,7 @@ export function LiveWorkspace({
   const [quickRepliesUsed, setQuickRepliesUsed] = useState(0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [voiceStatus, setVoiceStatus] = useState("Voice commands live");
+  const [sentenceInProgress, setSentenceInProgress] = useState("");
 
   const useBraille = profileId === "blind" || profileId === "deafblind";
   const speakIncoming = profileId === "blind";
@@ -176,7 +177,11 @@ export function LiveWorkspace({
       }
 
       if (payload.type === "sentence_complete") {
-        // Handled in Task 2
+        setTranscript((prev) => [...prev, `[${payload.sentence}]`]);
+        setSentenceInProgress("");
+        if (useBraille) {
+          setBrailleCells((prev) => [...prev, ...textToBrailleCells(`${payload.sentence} `)]);
+        }
         return;
       }
 
@@ -184,6 +189,7 @@ export function LiveWorkspace({
       const cleanSign = payload.sign.replace(/_/g, " ");
       setLatestSign(cleanSign);
       setConfidence(payload.confidence);
+      setSentenceInProgress(payload.sentence_in_progress ?? "");
       if (payload.is_new_sign && !(payload as SignPrediction & { _mock?: boolean })._mock) {
         setTranscript((prev) => [...prev, cleanSign]);
         if (useBraille) {
@@ -514,6 +520,7 @@ export function LiveWorkspace({
             <p className={`font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>{latestSign}</p>
             <p className="text-slate-300">Confidence: {Math.round(confidence * 100)}%</p>
           </div>
+          {sentenceInProgress && <p className="mt-1 text-lg text-slate-400">{sentenceInProgress}</p>}
         </section>
 
         {showCaptionFeed && (

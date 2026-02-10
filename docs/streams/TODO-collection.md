@@ -1,0 +1,9 @@
+# Task List — Stream 4: collect_data.py + test_realtime.py
+
+<!-- Ralph picks the first unchecked task each iteration. TDD: write failing test, then implement. -->
+<!-- SCOPE: Only modify collect_data.py, test_realtime.py, and ml/tests/test_collect_*.py or ml/tests/test_realtime_*.py -->
+
+- [ ] Add --actions arg to collect_data.py: add argparse with `--actions` argument that accepts a comma-separated list of sign names (default: all ACTIONS). Validate that each provided action exists in ACTIONS, exit with error if not. Only collect data for the specified actions. Write ml/tests/test_collect_args.py that (a) verifies default collects all 10 actions, (b) verifies --actions "Hello,Yes" filters to just those two, (c) verifies --actions "InvalidSign" exits with error.
+- [ ] Add --num_sequences arg to collect_data.py: add `--num_sequences` argument (default: NUM_SEQUENCES from utils, type int). Use this value instead of the imported NUM_SEQUENCES constant throughout main(). Write ml/tests/test_collect_sequences.py that (a) verifies default equals utils.NUM_SEQUENCES (30), (b) verifies --num_sequences 5 sets the value to 5, (c) verifies create_directories uses the CLI value by checking directory creation with tmp_path and monkeypatched DATA_PATH.
+- [ ] Add --model_path arg to test_realtime.py: add argparse with `--model_path` argument (default: MODEL_PATH from utils). Use this value when loading the model instead of the imported constant. Also add `--confidence` (default: CONFIDENCE_THRESHOLD) and `--window` (default: STABILITY_WINDOW) args. Write ml/tests/test_realtime_args.py that (a) verifies default --model_path matches utils.MODEL_PATH, (b) verifies --model_path "/tmp/custom.h5" overrides the default, (c) verifies --confidence and --window default to utils values.
+- [ ] ALL_TASKS_COMPLETE

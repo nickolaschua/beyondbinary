@@ -1,23 +1,39 @@
-# Task List — ML Lead
+# Task List — ML Lead (Consolidated)
 
-<!-- Ralph picks the first unchecked task each iteration. TDD: write failing test, then implement. -->
+<!-- Cleaned-up task list. For parallel execution, see docs/streams/. -->
 
-- [x] Set up pytest infrastructure: create ml/tests/__init__.py, ml/tests/conftest.py with mock MediaPipe results fixture, and a smoke test in ml/tests/test_smoke.py that imports utils and verifies ACTIONS has 10 items and extract_keypoints returns shape (1662,). Run pytest to confirm green.
-- [x] Test extract_keypoints edge cases: write ml/tests/test_extract_keypoints.py with tests for (a) all landmarks present → correct shape and non-zero values in all sections, (b) no landmarks detected → shape (1662,) all zeros, (c) only hands detected → pose/face sections are zeros, hand sections are non-zero. Use mock MediaPipe results from conftest.
-- [x] Test and fix decode_frame: write ml/tests/test_decode_frame.py testing (a) valid base64 JPEG returns numpy array with 3 channels, (b) base64 with data URL prefix "data:image/jpeg;base64,..." works, (c) empty string raises or returns None, (d) invalid base64 raises or returns None. Then add input validation to ws_server.decode_frame so it returns None instead of crashing on bad input.
-- [x] Test and fix load_data: write ml/tests/test_load_data.py using tmp_path fixture to create fake MP_Data directories. Test (a) valid data loads correctly, (b) missing action directory logs warning and continues, (c) missing frame .npy in a sequence skips that sequence, (d) .npy with wrong shape skips that sequence. Verify load_data handles all cases without crashing.
-- [x] Deduplicate constants: write ml/tests/test_constants.py that imports ACTIONS from utils.py and from train_model.py and verify_data.py, asserting they are identical. Then refactor train_model.py and verify_data.py to import ACTIONS, NUM_SEQUENCES, SEQUENCE_LENGTH from utils instead of redefining them. Verify all tests still pass.
-- [x] Extract stability filter: write ml/tests/test_stability_filter.py testing a StabilityFilter class with (a) N consecutive identical predictions above threshold → is_stable=True, (b) mixed predictions → is_stable=False, (c) predictions below threshold → reset/not stable. Then create StabilityFilter in utils.py and update ws_server.py and test_realtime.py to use it.
-- [x] Test and fix model loading: write ml/tests/test_ws_server.py testing (a) /health returns status "ok" with model_loaded=False when no model is loaded, (b) /health returns correct actions list. Then fix ws_server.py so it handles a missing model file gracefully at startup (log error, set model=None) instead of crashing. Use fastapi.testclient.TestClient for tests.
-- [x] Centralize config with env var overrides: move HOST, PORT, CONFIDENCE_THRESHOLD, STABILITY_WINDOW from ws_server.py and test_realtime.py into utils.py. Add os.environ.get() overrides so each can be set via environment variable (e.g. SENSEAI_HOST, SENSEAI_PORT, SENSEAI_CONFIDENCE_THRESHOLD). Fix MODEL_PATH to use `os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'action_model.h5')` so it resolves correctly regardless of cwd. Write ml/tests/test_config.py verifying (a) defaults match current hardcoded values, (b) env vars override defaults using monkeypatch.
-- [ ] Replace bare except in decode_frame: in ws_server.py the `except Exception:` on line ~96 in decode_frame should catch specific exceptions (binascii.Error, cv2.error). Also in the WebSocket handler, the outer `except Exception as e:` on line ~198 should log the full traceback. Write ml/tests/test_error_handling.py testing that decode_frame raises/returns None for (a) invalid base64 (binascii.Error), (b) valid base64 but not an image (cv2 returns None). Verify all existing tests still pass.
-- [ ] Add data URL validation: in ws_server.py decode_frame, validate that if input starts with "data:" it must contain a comma separator before splitting. If the comma is missing, return None. Also add a payload size check: if len(data) > 5_000_000 (5MB), return None immediately and log a warning. Write ml/tests/test_data_url_validation.py testing (a) "data:image/jpeg;base64" with no comma → None, (b) string longer than 5MB → None, (c) normal data URL → works.
-- [ ] Add model file check at startup: in ws_server.py load_model(), before calling tf.keras.models.load_model(), check os.path.isfile(MODEL_PATH). If the file doesn't exist, log a clear error message like "Model file not found at {MODEL_PATH}. Server will start but predictions will not work." and leave model=None. Write a test in ml/tests/test_ws_server.py verifying the server starts and /health returns model_loaded=False when model file is missing.
-- [ ] Fix CORS wildcard with credentials: in ws_server.py, change allow_origins from ["*"] to a configurable list loaded from SENSEAI_CORS_ORIGINS env var (default "http://localhost:3000,http://localhost:3001"). Set allow_credentials=True only when origins are not wildcard. Write ml/tests/test_cors.py using TestClient verifying (a) default origins are localhost:3000 and 3001, (b) CORS headers are set correctly on /health response.
-- [ ] Add per-client frame rate limiting: in ws_server.py sign_detection handler, track frame timestamps per connection using a deque(maxlen=60). Before processing each frame, check if client has sent more than 60 frames in the last 10 seconds. If exceeded, send {"type": "error", "message": "Rate limit exceeded"} and skip processing. Write ml/tests/test_rate_limit.py testing (a) 60 frames in 10s → all accepted, (b) 61st frame within 10s → rate limited error returned.
-- [ ] Add edge case tests for WebSocket messages: write ml/tests/test_ws_edge_cases.py testing the WebSocket handler with (a) non-JSON text → returns error, (b) JSON with wrong type field → returns error, (c) JSON with type "frame" but empty frame → continues without crash, (d) JSON with type "frame" and oversized base64 string (>5MB) → returns error. Use httpx AsyncClient and WebSocket test support from Starlette.
-- [ ] Add performance timing to inference path: in ws_server.py, add time.perf_counter() around (a) MediaPipe detection call and (b) model.predict() call. Log a warning if either takes >200ms. Add total_inference_ms to the sign_prediction response JSON. Update /health endpoint to include avg_mediapipe_ms and avg_inference_ms (track running averages using a deque of last 100 measurements). Write ml/tests/test_timing.py verifying that sign_prediction responses include the total_inference_ms field.
-- [ ] Document WebSocket protocol: create ml/PROTOCOL.md documenting the WebSocket message schema. Include: (a) connection lifecycle (connect → buffering → predictions → disconnect), (b) client→server message format {"type": "frame", "frame": "<base64 jpeg>"}, (c) server→client message types (buffering, sign_prediction, error) with all fields documented, (d) error codes and their meanings. Keep it concise — one page, no fluff.
-- [ ] Migrate FastAPI startup to lifespan: in ws_server.py, replace the deprecated @app.on_event("startup") with an async context manager using contextlib.asynccontextmanager as the lifespan parameter to FastAPI(). Move model loading into the lifespan function. Write ml/tests/test_lifespan.py verifying (a) model loads during startup via lifespan, (b) /health returns model_loaded status correctly. Verify all existing tests still pass.
-- [ ] Add runtime keypoint shape assertion: in utils.py extract_keypoints(), add an assertion `assert result.shape == (1662,)` before returning. Write ml/tests/test_keypoint_assertion.py verifying (a) normal extraction returns (1662,) without error, (b) if the assertion is hit (mock a corrupted concatenation), it raises AssertionError with a clear message. Verify all existing tests still pass.
-- [ ] ALL_TASKS_COMPLETE
+## Completed
+
+- [x] Set up pytest infrastructure
+- [x] Test extract_keypoints edge cases
+- [x] Test and fix decode_frame
+- [x] Test and fix load_data
+- [x] Deduplicate constants
+- [x] Extract stability filter
+- [x] Test and fix model loading
+- [x] Centralize config with env var overrides
+
+## Remaining (split into 4 parallel streams)
+
+See `docs/streams/` for per-stream TODO files used by parallel Ralph loops.
+
+### Stream 1: ws_server.py
+- [ ] Harden decode_frame (specific exceptions + data URL validation + 5MB limit)
+- [ ] Per-client frame rate limiting
+- [ ] Inference timing in response JSON
+- [ ] Migrate to lifespan context manager
+
+### Stream 2: utils.py
+- [ ] Runtime keypoint shape assertion
+- [ ] Resolve DATA_PATH relative to __file__
+- [ ] Type hints on all public functions
+
+### Stream 3: train_model.py + verify_data.py
+- [ ] Specific exceptions in load_data
+- [ ] --learning_rate CLI arg
+- [ ] verify_data.py CLI args (--data_path, --min_hands)
+
+### Stream 4: collect_data.py + test_realtime.py
+- [ ] --actions arg for collect_data.py
+- [ ] --num_sequences arg for collect_data.py
+- [ ] --model_path arg for test_realtime.py

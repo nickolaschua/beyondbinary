@@ -84,7 +84,10 @@ SENTENCE_TIMEOUT = _safe_float("SENSEAI_SENTENCE_TIMEOUT", 2.0)
 
 CORS_ORIGINS: list[str] = [
     origin.strip()
-    for origin in os.environ.get('SENSEAI_CORS_ORIGINS', '*').split(',')
+    for origin in os.environ.get(
+        'SENSEAI_CORS_ORIGINS',
+        'http://localhost:3000,http://127.0.0.1:3000',
+    ).split(',')
     if origin.strip()
 ]
 

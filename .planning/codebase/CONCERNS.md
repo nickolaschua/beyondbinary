@@ -31,17 +31,14 @@ No confirmed bugs found in current codebase. Previous bugs (race condition, miss
 
 ## Security Considerations
 
-**Overly Permissive CORS Configuration:**
-- Risk: Any website can connect to the WebSocket server and send/receive data
-- Files: `ml/ws_server.py` (lines 73-79) - `allow_origins=["*"]`
-- Current mitigation: None (development-mode configuration)
-- Recommendations: Restrict to specific allowed origins in production deployment
+**CORS Configuration (Resolved):**
+- ~~Risk: Any website can connect to the WebSocket server~~ — Now configurable via `SENSEAI_CORS_ORIGINS` env var
+- Files: `ml/utils.py` (CORS_ORIGINS), `ml/ws_server.py` (line 77)
+- Default: `["*"]` (development); set `SENSEAI_CORS_ORIGINS=https://your-frontend.com` for production
 
-**Unvalidated Environment Variable Conversions:**
-- Risk: Invalid env var values (e.g., `SENSEAI_PORT=abc`) crash server at import time with unhelpful error
-- Files: `ml/utils.py` (lines 38-41)
-- Current mitigation: Sensible defaults if env vars not set
-- Recommendations: Wrap in try/except with validation and fallback to defaults
+**Environment Variable Conversions (Resolved):**
+- ~~Risk: Invalid env var values crash server~~ — Now uses `_safe_int()`/`_safe_float()` with fallback defaults
+- Files: `ml/utils.py` (lines 39-81)
 
 **Docker Image Uses node:20-slim for Python App:**
 - Risk: Unnecessary attack surface from Node.js in a primarily Python ML application

@@ -92,13 +92,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Milestone Goal:** Resolve dependency hell, harden the pipeline against edge cases and security issues, add proper test coverage, and instrument for performance monitoring.
 
 - [x] **Phase 11: Dependency Resolution** - Python 3.12 venv, pinned requirements install, full import + MediaPipe verification
-- [ ] **Phase 12: Consolidate Constants & Config** - Deduplicate constants, centralize config with env var overrides, fix relative MODEL_PATH
-- [ ] **Phase 13: Error Handling & Input Validation** - Specific exceptions, data URL validation, payload size limits, model-load safety
-- [ ] **Phase 14: Security Hardening** - Fix CORS wildcard+credentials, add frame rate limiting, basic API key auth
-- [ ] **Phase 15: Unit Tests** - pytest setup, unit tests for core functions with mocks
-- [ ] **Phase 16: Edge Case & Negative Tests** - Invalid inputs, corrupted data, oversized payloads
-- [ ] **Phase 17: Performance Instrumentation** - Latency logging, timing middleware, slow-prediction warnings
-- [ ] **Phase 18: Protocol Docs & Modernization** - WebSocket schema docs, FastAPI lifespan migration
+- [x] **Phase 12: Consolidate Constants & Config** - Deduplicate constants, centralize config with env var overrides, fix relative MODEL_PATH *(completed by Ralph loop pre-GSD)*
+- [x] **Phase 13: Error Handling & Input Validation** - Specific exceptions, data URL validation, payload size limits, model-load safety *(completed by Ralph loop pre-GSD)*
+- [x] **Phase 14: Security Hardening** - CORS origin restriction, env var validation, optional API key auth
+- [x] **Phase 15: Unit Tests** - pytest setup, unit tests for core functions with mocks *(completed by Ralph loop — 21 files, 114+ tests)*
+- [x] **Phase 16: Edge Case & Negative Tests** - Invalid inputs, corrupted data, oversized payloads *(completed by Ralph loop — test_decode_frame_hardened.py etc.)*
+- [x] **Phase 17: Performance Instrumentation** - Latency logging, timing middleware, slow-prediction warnings *(completed by Ralph loop — inference_times deque, /health endpoint)*
+- [ ] **Phase 18: Protocol Docs & Modernization** - WebSocket message schema documentation
 
 #### Phase 11: Dependency Resolution
 **Goal**: Working Python 3.12 venv with all pinned dependencies installed and verified. MediaPipe, TensorFlow, OpenCV all import cleanly. Webcam + MediaPipe Holistic detection confirmed working. All existing scripts run without import errors.
@@ -112,67 +112,59 @@ Plans:
 #### Phase 12: Consolidate Constants & Config
 **Goal**: Single source of truth for ACTIONS, SEQUENCE_LENGTH, NUM_SEQUENCES in `ml/utils.py`. HOST, PORT, CONFIDENCE_THRESHOLD, STABILITY_WINDOW centralized with environment variable overrides. MODEL_PATH uses absolute path resolution.
 **Depends on**: Phase 11
-**Research**: Unlikely (internal refactoring, Python stdlib)
-**Plans**: TBD
-
-Plans:
-- [ ] 12-01: TBD
+**Status**: Complete (implemented by Ralph loop pre-GSD)
+**Evidence**: `ml/utils.py` lines 25-41 — all constants centralized, env var overrides via `SENSEAI_*`, `MODEL_PATH` uses `os.path.abspath(__file__)`. `ml/ws_server.py` imports all from `utils`.
+**Plans**: 0/0 (no plans needed — work was done pre-GSD)
 
 #### Phase 13: Error Handling & Input Validation
 **Goal**: WebSocket server uses specific exception types (binascii.Error, cv2.error, ValueError) instead of bare `except Exception`. Data URL parsing validated before split. Payload size limit enforced (max 5MB). Model file existence checked at startup with clear error message.
 **Depends on**: Phase 12
-**Research**: Unlikely (standard Python error handling patterns)
-**Plans**: TBD
-
-Plans:
-- [ ] 13-01: TBD
+**Status**: Complete (implemented by Ralph loop pre-GSD)
+**Evidence**: `ml/ws_server.py` `decode_frame()` — 5MB limit (line 103), data URL comma check (line 109), `binascii.Error`/`ValueError` catches (line 118). Lifespan checks `os.path.isfile(MODEL_PATH)` (line 59).
+**Plans**: 0/0 (no plans needed — work was done pre-GSD)
 
 #### Phase 14: Security Hardening
-**Goal**: CORS restricted to frontend domain (no wildcard+credentials). Per-client frame rate limiting (max 60 frames per 10 seconds). Basic API key validation on WebSocket connect.
+**Goal**: Restrict CORS to configurable allowed origins (no wildcard+credentials). Add try/except validation for env var type conversions. Optional API key auth on WebSocket connect.
 **Depends on**: Phase 13
-**Research**: Likely (FastAPI WebSocket auth patterns, rate limiting middleware options)
-**Research topics**: FastAPI WebSocket authentication best practices, starlette rate limiting, per-connection state for rate tracking
-**Plans**: TBD
+**Already done**: Per-client frame rate limiting (60 frames/10s) in `ws_server.py` lines 159-162
+**Remaining work**: (1) CORS origin restriction via `SENSEAI_CORS_ORIGINS` env var, (2) env var validation with fallback for invalid values, (3) optional `SENSEAI_API_KEY` check on WebSocket connect
+**Research**: Unlikely (straightforward FastAPI patterns)
+**Plans**: 1/1 complete
 
 Plans:
-- [ ] 14-01: TBD
+- [x] 14-01: Env var validation, configurable CORS origins, optional API key auth
 
 #### Phase 15: Unit Tests
 **Goal**: pytest configured with test fixtures. Unit tests for `extract_keypoints()`, `decode_frame()`, `mediapipe_detection()` using mocks. Contract test for (1662,) keypoint shape. All tests pass in CI-compatible mode (no webcam required).
 **Depends on**: Phase 13
-**Research**: Unlikely (pytest is established, functions are pure or easily mockable)
-**Plans**: TBD
-
-Plans:
-- [ ] 15-01: TBD
+**Status**: Complete (implemented by Ralph loop pre-GSD)
+**Evidence**: `ml/tests/` — 21 test files, 114+ tests. `conftest.py` at two levels with MediaPipe mocking. `test_extract_keypoints.py` validates 1662 shape contract. All tests run without webcam/GPU.
+**Plans**: 0/0 (no plans needed — work was done pre-GSD)
 
 #### Phase 16: Edge Case & Negative Tests
 **Goal**: Tests for invalid input formats, corrupted base64 data, oversized payloads, malformed WebSocket messages. Server handles all gracefully without crashing.
 **Depends on**: Phase 15
-**Research**: Unlikely (standard test patterns with fixtures)
-**Plans**: TBD
-
-Plans:
-- [ ] 16-01: TBD
+**Status**: Complete (implemented by Ralph loop pre-GSD)
+**Evidence**: `ml/tests/test_decode_frame_hardened.py` — URL prefix, oversized payload, empty input. `test_ws_server.py` — invalid JSON, unknown message types. `test_ws_rate_limit.py` — rate limiting edge cases.
+**Plans**: 0/0 (no plans needed — work was done pre-GSD)
 
 #### Phase 17: Performance Instrumentation
 **Goal**: Timing around MediaPipe detection and LSTM inference in WebSocket server. Slow prediction logging (>200ms). Per-request latency metrics available at `/health` endpoint.
 **Depends on**: Phase 13
-**Research**: Unlikely (Python timing/logging, existing FastAPI patterns)
-**Plans**: TBD
-
-Plans:
-- [ ] 17-01: TBD
+**Status**: Complete (implemented by Ralph loop pre-GSD)
+**Evidence**: `ml/ws_server.py` — `inference_times = deque(maxlen=100)` (line 52), `time.perf_counter()` around detection+prediction (lines 179-206), `>200ms` warning (lines 208-209), `/health` returns `avg_inference_ms` (line 84).
+**Plans**: 0/0 (no plans needed — work was done pre-GSD)
 
 #### Phase 18: Protocol Docs & Modernization
-**Goal**: WebSocket message schema documented (connection lifecycle, request/response formats, error codes). FastAPI `@app.on_event("startup")` replaced with lifespan handlers. Runtime keypoint shape assertion added.
-**Depends on**: Phase 17
-**Research**: Likely (FastAPI lifespan API current best practices)
-**Research topics**: FastAPI lifespan context manager pattern, asynccontextmanager usage with model loading
-**Plans**: TBD
+**Goal**: WebSocket message schema documented (connection lifecycle, request/response formats, error codes).
+**Depends on**: Phase 14
+**Already done**: FastAPI lifespan context manager (`ws_server.py` lines 55-67). Runtime keypoint shape assertion (`utils.py` line 156).
+**Remaining work**: WebSocket protocol documentation (message types, JSON schemas, error codes, connection lifecycle)
+**Research**: Unlikely (documenting existing behavior)
+**Plans**: 0/1
 
 Plans:
-- [ ] 18-01: TBD
+- [ ] 18-01: WebSocket protocol documentation (docs/WEBSOCKET.md)
 
 ## Progress
 
@@ -192,10 +184,10 @@ Phases execute in numeric order: 1 → 2 → ... → 10 → 11 → 12 → ... �
 | 9. Integration Testing | v1.0 | -/- | Complete | 2026-02-09 |
 | 10. Polish & Demo Support | v1.0 | -/- | Complete | 2026-02-09 |
 | 11. Dependency Resolution | v1.1 | 1/1 | Complete | 2026-02-10 |
-| 12. Consolidate Constants & Config | v1.1 | 0/? | Not started | - |
-| 13. Error Handling & Input Validation | v1.1 | 0/? | Not started | - |
-| 14. Security Hardening | v1.1 | 0/? | Not started | - |
-| 15. Unit Tests | v1.1 | 0/? | Not started | - |
-| 16. Edge Case & Negative Tests | v1.1 | 0/? | Not started | - |
-| 17. Performance Instrumentation | v1.1 | 0/? | Not started | - |
-| 18. Protocol Docs & Modernization | v1.1 | 0/? | Not started | - |
+| 12. Consolidate Constants & Config | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
+| 13. Error Handling & Input Validation | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
+| 14. Security Hardening | v1.1 | 1/1 | Complete | 2026-02-10 |
+| 15. Unit Tests | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
+| 16. Edge Case & Negative Tests | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
+| 17. Performance Instrumentation | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
+| 18. Protocol Docs & Modernization | v1.1 | 0/1 | Not started | - |

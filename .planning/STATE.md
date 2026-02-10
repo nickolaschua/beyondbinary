@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** A working, reliable sign detection pipeline that the frontend can connect to — signs performed on webcam must appear as text predictions in the browser with minimal latency and few false positives.
-**Current focus:** Phase 12 — Consolidate Constants & Config
+**Current focus:** Phase 18 — Protocol Docs & Modernization
 
 ## Current Position
 
-Phase: 11 of 18 (Dependency Resolution)
-Plan: 1 of 1 in current phase
-Status: Phase complete
-Last activity: 2026-02-10 — Completed 11-01-PLAN.md
+Phase: 17 of 18 (Phase 14 complete, 15-17 pre-GSD)
+Plan: 1 of 1 in Phase 14
+Status: Phase 14 complete
+Last activity: 2026-02-10 — Completed 14-01-PLAN.md
 
-Progress: [███████████░░░░░░░] 11/18 phases
+Progress: [█████████████████░] 17/18 phases
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 35 min
-- Total execution time: 0.6 hours
+- Total plans completed: 2
+- Average duration: 27 min
+- Total execution time: 0.9 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 11 | 1 | 35 min | 35 min |
+| 14 | 1 | 19 min | 19 min |
 
 **Recent Trend:**
-- Last 5 plans: 35 min
-- Trend: First plan, no trend yet
+- Last 5 plans: 35 min, 19 min
+- Trend: Improving (second plan 46% faster)
 
 ## Accumulated Context
 
@@ -45,6 +46,9 @@ Recent decisions affecting current work:
 - Pin tensorflow 2.16.2 (mediapipe 0.10.21 requires numpy<2, TF 2.20.0 requires numpy>=2)
 - Pin numpy 1.26.4, opencv-python 4.11.0.86 for full compatibility chain
 - All scripts must run via ml/venv/Scripts/python.exe (never system Python 3.13)
+- CORS defaults to ["*"] for dev; production sets SENSEAI_CORS_ORIGINS
+- API key auth opt-in via SENSEAI_API_KEY; query param ?api_key=KEY on WebSocket
+- Invalid env var values silently fall back to defaults (no crash)
 
 ### Deferred Issues
 
@@ -59,9 +63,12 @@ None yet.
 - v1.0 MVP completed pre-GSD: 10 phases of code built via agent branches and merged
 - v1.1 Refinement & Testing created: dependency resolution, hardening, testing, 8 phases (Phase 11-18)
 - Phase 11 complete: Python 3.12 venv with compatible dependency set
+- Phases 12-13, 15-17 retroactively complete: Ralph loop built constants consolidation, error handling, tests, edge case tests, and performance instrumentation during v1.0 work
+- Remaining: Phase 14 (CORS, env var validation, API key auth) and Phase 18 (WebSocket protocol docs)
+- Phase 14 complete: CORS configurable, env var validation, optional API key auth — 131 tests passing
 
 ## Session Continuity
 
 Last session: 2026-02-10
-Stopped at: Completed 11-01-PLAN.md
+Stopped at: Completed 14-01-PLAN.md, Phase 18 next
 Resume file: None

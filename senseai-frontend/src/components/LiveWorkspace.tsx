@@ -28,7 +28,8 @@ type SignPrediction = {
 type WsPayload =
   | SignPrediction
   | { type: "buffering"; frames_collected: number; frames_needed: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "sentence_complete"; sentence: string; word_count?: number };
 
 type BackendQuickReply = { label: string; spoken_text: string };
 type ConversationLine = { text: string; tone?: string };
@@ -171,6 +172,11 @@ export function LiveWorkspace({
 
       if (payload.type === "error") {
         setErrors((prev) => [...prev.slice(-5), payload.message]);
+        return;
+      }
+
+      if (payload.type === "sentence_complete") {
+        // Handled in Task 2
         return;
       }
 
@@ -594,7 +600,6 @@ export function LiveWorkspace({
               ))}
             </div>
           </section>
-        )}
 
         {errors.length > 0 && (
           <section className="rounded-2xl border border-rose-700 bg-rose-950/40 p-5">

@@ -136,7 +136,7 @@ def load_data(data_path: str):
                         valid = False
                         break
                     window.append(frame)
-                except Exception as e:
+                except (ValueError, OSError, EOFError) as e:
                     logger.warning("Error loading %s: %s", frame_path, e)
                     valid = False
                     break

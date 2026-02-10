@@ -13,6 +13,8 @@ Run:
 """
 
 import base64
+import binascii
+import contextlib
 import json
 import logging
 import os
@@ -43,8 +45,30 @@ from utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ws_server")
 
+# --- Global model (loaded once at startup) ---
+model = None
+
+# --- Inference timing ---
+inference_times = deque(maxlen=100)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    global model
+    logger.info(f"Loading model from {MODEL_PATH}...")
+    if not os.path.isfile(MODEL_PATH):
+        logger.error(f"Model file not found at {MODEL_PATH}. Server will start but predictions will not work.")
+    else:
+        try:
+            model = tf.keras.models.load_model(MODEL_PATH)
+            logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}. Server will start but predictions will not work.")
+    yield
+
+
 # --- App ---
-app = FastAPI(title="SenseAI Sign Detection", version="1.0.0")
+app = FastAPI(title="SenseAI Sign Detection", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,31 +78,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Global model (loaded once at startup) ---
-model = None
-
-
-@app.on_event("startup")
-async def load_model():
-    global model
-    logger.info(f"Loading model from {MODEL_PATH}...")
-    if not os.path.isfile(MODEL_PATH):
-        logger.error(f"Model file not found at {MODEL_PATH}. Server will start but predictions will not work.")
-        return
-    try:
-        model = tf.keras.models.load_model(MODEL_PATH)
-        logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
-    except Exception as e:
-        logger.error(f"Failed to load model: {e}. Server will start but predictions will not work.")
-
 
 @app.get("/health")
 async def health():
+    avg_ms = round(sum(inference_times) / len(inference_times), 1) if inference_times else 0
     return {
         "status": "ok",
         "model_loaded": model is not None,
         "actions": list(ACTIONS),
         "sequence_length": SEQUENCE_LENGTH,
+        "avg_inference_ms": avg_ms,
     }
 
 
@@ -90,8 +99,15 @@ def decode_frame(data: str) -> np.ndarray | None:
     if not data or not data.strip():
         return None
 
+    # Payload size check before any processing
+    if len(data) > 5_000_000:
+        logger.warning("Frame payload exceeds 5MB limit (%d bytes), rejecting", len(data))
+        return None
+
     # Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
     if data.startswith("data:"):
+        if "," not in data:
+            return None
         data = data.split(",", 1)[1]
 
     if not data:
@@ -99,7 +115,7 @@ def decode_frame(data: str) -> np.ndarray | None:
 
     try:
         img_bytes = base64.b64decode(data)
-    except Exception:
+    except (binascii.Error, ValueError):
         return None
 
     if not img_bytes:
@@ -121,6 +137,7 @@ async def sign_detection(websocket: WebSocket):
     holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5)
     keypoint_buffer = deque(maxlen=SEQUENCE_LENGTH)
     stability_filter = StabilityFilter(window_size=STABILITY_WINDOW, threshold=CONFIDENCE_THRESHOLD)
+    frame_times = deque(maxlen=60)
     frames_processed = 0
 
     try:
@@ -138,6 +155,12 @@ async def sign_detection(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "message": f"Unknown message type: {msg.get('type')}"})
                 continue
 
+            # Per-client frame rate limiting
+            frame_times.append(time.time())
+            if len(frame_times) == 60 and frame_times[-1] - frame_times[0] < 10.0:
+                await websocket.send_json({"type": "error", "message": "Rate limit exceeded: max 60 frames per 10 seconds"})
+                continue
+
             frame_data = msg.get("frame", "")
             if not frame_data:
                 continue
@@ -152,7 +175,8 @@ async def sign_detection(websocket: WebSocket):
             if frame is None:
                 continue
 
-            # MediaPipe detection
+            # MediaPipe detection (timed)
+            t0 = time.perf_counter()
             _, results = mediapipe_detection(frame, holistic)
 
             # Check if hands detected
@@ -177,6 +201,12 @@ async def sign_detection(websocket: WebSocket):
             # Run prediction
             sequence = np.expand_dims(np.array(list(keypoint_buffer)), axis=0)
             predictions = model.predict(sequence, verbose=0)[0]
+            t1 = time.perf_counter()
+
+            total_inference_ms = round((t1 - t0) * 1000, 1)
+            inference_times.append(total_inference_ms)
+            if total_inference_ms > 200:
+                logger.warning("Inference took %.1fms (exceeds 200ms threshold)", total_inference_ms)
 
             predicted_idx = int(np.argmax(predictions))
             confidence = float(predictions[predicted_idx])
@@ -202,12 +232,13 @@ async def sign_detection(websocket: WebSocket):
                 "hands_detected": hands_detected,
                 "all_predictions": all_predictions,
                 "frames_processed": frames_processed,
+                "total_inference_ms": total_inference_ms,
             })
 
     except WebSocketDisconnect:
         logger.info(f"Client disconnected: {client}")
-    except Exception as e:
-        logger.error(f"Error with client {client}: {e}")
+    except Exception:
+        logger.exception("Error with client %s", client)
     finally:
         holistic.close()
         logger.info(f"MediaPipe closed for client: {client}")

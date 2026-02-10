@@ -7,6 +7,7 @@ import { AudioAssistButton } from "@/components/AudioAssistButton";
 import { API_URL, VIDEO_CALL_POC_URL, WS_URL } from "@/lib/constants";
 import { getProfile, readUserConfig, writeUserConfig } from "@/lib/profile";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
+import { useVoiceCommands, type VoiceCommand } from "@/hooks/useVoiceCommands";
 
 type MeetingSource = "local" | "zoom" | "meet" | "teams";
 
@@ -25,6 +26,8 @@ export default function StartMeetingPage() {
   const [checking, setChecking] = useState(false);
   const [cameraReady, setCameraReady] = useState<boolean | null>(null);
   const [microphoneReady, setMicrophoneReady] = useState<boolean | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState("Voice commands live");
 
   const config = useMemo(() => readUserConfig(), []);
   const profile = config ? getProfile(config.profileId) : null;
@@ -68,9 +71,8 @@ export default function StartMeetingPage() {
     runChecks();
   }, [runChecks]);
 
-  if (!profile || !config) return null;
-
-  const startMeeting = () => {
+  const startMeeting = useCallback(() => {
+    if (!profile || !config) return;
     writeUserConfig(config);
     const sessionId = `${Date.now()}`;
     const query = new URLSearchParams({
@@ -80,7 +82,26 @@ export default function StartMeetingPage() {
       sid: sessionId,
     });
     router.push(`/live/${profile.id}?${query.toString()}`);
-  };
+  }, [apiUrl, config, profile, router, source, wsUrl]);
+
+  const voiceCommands: VoiceCommand[] = [
+    { phrases: ["start", "start session", "begin"], action: () => startMeeting() },
+    { phrases: ["run check", "check", "refresh"], action: () => runChecks() },
+    { phrases: ["settings", "open settings"], action: () => router.push("/settings") },
+    { phrases: ["onboarding", "go onboarding"], action: () => router.push("/onboarding") },
+    { phrases: ["local"], action: () => setSource("local") },
+    { phrases: ["zoom"], action: () => setSource("zoom") },
+    { phrases: ["meet", "google meet"], action: () => setSource("meet") },
+    { phrases: ["teams", "microsoft teams"], action: () => setSource("teams") },
+  ];
+
+  useVoiceCommands({
+    enabled: voiceEnabled && settingsAudioEnabled(config),
+    commands: voiceCommands,
+    onHeard: (transcript) => setVoiceStatus(`Heard: ${transcript}`),
+  });
+
+  if (!profile || !config) return null;
 
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-10">
@@ -97,8 +118,16 @@ export default function StartMeetingPage() {
           <Link href="/settings" className="rounded-lg border border-slate-600 px-3 py-2 text-slate-200">
             Settings
           </Link>
+          <button
+            type="button"
+            onClick={() => setVoiceEnabled((prev) => !prev)}
+            className="rounded-lg border border-slate-600 px-3 py-2 text-slate-200"
+          >
+            Voice: {voiceEnabled ? "On" : "Off"}
+          </button>
         </div>
       </header>
+      <p className="mb-4 text-sm text-slate-300">{voiceStatus}</p>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
@@ -195,6 +224,10 @@ export default function StartMeetingPage() {
       </section>
     </main>
   );
+}
+
+function settingsAudioEnabled(config: ReturnType<typeof readUserConfig>) {
+  return config?.settings.audioPrompts ?? true;
 }
 
 function SourceOption({

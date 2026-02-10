@@ -1,9 +1,9 @@
 export type BrailleCellPattern = [boolean, boolean, boolean, boolean, boolean, boolean];
 
 // Dot positions:
-// [1, 2,
-//  3, 4,
-//  5, 6]
+// [1, 4,
+//  2, 5,
+//  3, 6]
 //
 // This is a minimal Grade 1 (uncontracted) mapping for demo purposes.
 
@@ -106,4 +106,3 @@ export function textToBrailleCells(text: string): BrailleCellPattern[] {
 
   return cells;
 }
-

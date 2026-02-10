@@ -8,6 +8,11 @@ Build the complete ASL sign language detection pipeline from environment setup t
 
 None
 
+## Milestones
+
+- ✅ **v1.0 MVP** - Phases 1-10 (shipped 2026-02-10)
+- 🚧 **v1.1 Refinement & Testing** - Phases 11-18 (in progress)
+
 ## Phases
 
 **Phase Numbering:**
@@ -16,126 +21,181 @@ None
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Environment Setup** - Python venv, pinned dependencies, webcam + MediaPipe verification
-- [ ] **Phase 2: Utility Functions** - Shared helper functions (extract_keypoints, mediapipe_detection, draw_landmarks)
-- [ ] **Phase 3: Data Collection Script** - collect_data.py with webcam recording, resume support, visual feedback
-- [ ] **Phase 4: Data Recording** - Record all 10 ASL signs (30 sequences x 30 frames each)
-- [ ] **Phase 5: Data Verification** - verify_data.py to confirm hand detection quality before training
-- [ ] **Phase 6: Model Training** - Colab notebook: LSTM architecture, training, evaluation, confusion matrix
-- [ ] **Phase 7: Real-Time Inference** - test_realtime.py with sliding window, confidence threshold, stability filter
-- [ ] **Phase 8: WebSocket Server** - FastAPI ws_server.py receiving base64 frames, returning JSON predictions
-- [ ] **Phase 9: Integration Testing** - End-to-end browser frame to prediction, latency tuning, idle detection
-- [ ] **Phase 10: Polish & Demo Support** - Confidence tuning, false positive reduction, demo recording support
+<details>
+<summary>✅ v1.0 MVP (Phases 1-10) - SHIPPED 2026-02-10</summary>
 
-## Phase Details
+- [x] **Phase 1: Environment Setup** - Python venv, pinned dependencies, webcam + MediaPipe verification
+- [x] **Phase 2: Utility Functions** - Shared helper functions (extract_keypoints, mediapipe_detection, draw_landmarks)
+- [x] **Phase 3: Data Collection Script** - collect_data.py with webcam recording, resume support, visual feedback
+- [x] **Phase 4: Data Recording** - Record all 10 ASL signs (30 sequences x 30 frames each)
+- [x] **Phase 5: Data Verification** - verify_data.py to confirm hand detection quality before training
+- [x] **Phase 6: Model Training** - Colab notebook: LSTM architecture, training, evaluation, confusion matrix
+- [x] **Phase 7: Real-Time Inference** - test_realtime.py with sliding window, confidence threshold, stability filter
+- [x] **Phase 8: WebSocket Server** - FastAPI ws_server.py receiving base64 frames, returning JSON predictions
+- [x] **Phase 9: Integration Testing** - End-to-end browser frame to prediction, latency tuning, idle detection
+- [x] **Phase 10: Polish & Demo Support** - Confidence tuning, false positive reduction, demo recording support
 
 ### Phase 1: Environment Setup
 **Goal**: Working Python 3.11 venv with all pinned dependencies, verified webcam access, MediaPipe Holistic running
 **Depends on**: Nothing (first phase)
-**Research**: Unlikely (established setup, all versions pinned in .context)
-**Plans**: TBD
-
-Plans:
-- [ ] 01-01: TBD (run /gsd:plan-phase 1 to break down)
+**Plans**: Completed (pre-GSD)
 
 ### Phase 2: Utility Functions
-**Goal**: Shared `utils.py` with extract_keypoints, mediapipe_detection, draw_landmarks — used by all subsequent scripts
+**Goal**: Shared `utils.py` with extract_keypoints, mediapipe_detection, draw_landmarks
 **Depends on**: Phase 1
-**Research**: Unlikely (MediaPipe API documented in .context, pattern from reference repos)
-**Plans**: TBD
-
-Plans:
-- [ ] 02-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 3: Data Collection Script
-**Goal**: Working `collect_data.py` that opens webcam, runs MediaPipe Holistic, shows landmarks + status overlay, saves .npy keypoints per frame with resume support
+**Goal**: Working `collect_data.py` with webcam recording, resume support, visual feedback
 **Depends on**: Phase 2
-**Research**: Unlikely (pattern well-understood from nicknochnack/SomyanshAvasthi analysis)
-**Plans**: TBD
-
-Plans:
-- [ ] 03-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 4: Data Recording
-**Goal**: All 10 ASL signs recorded — 30 sequences x 30 frames each in MP_Data/ directory. Hands detected in >80% of frames per sign.
+**Goal**: All 10 ASL signs recorded — 30 sequences x 30 frames each in MP_Data/
 **Depends on**: Phase 3
-**Research**: Unlikely (manual webcam recording — watch ASL reference videos, then perform signs)
-**Plans**: TBD
-
-Plans:
-- [ ] 04-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 5: Data Verification
-**Goal**: `verify_data.py` confirms data quality — sequence counts, keypoint shapes, hand detection rates. Any sign with <80% hand detection flagged for re-recording.
+**Goal**: `verify_data.py` confirms data quality — sequence counts, keypoint shapes, hand detection rates
 **Depends on**: Phase 4
-**Research**: Unlikely (simple numpy array inspection)
-**Plans**: TBD
-
-Plans:
-- [ ] 05-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 6: Model Training
-**Goal**: Trained `action_model.h5` with >90% test accuracy. Colab notebook with 3-layer LSTM (tanh), BatchNorm, Dropout, EarlyStopping. Confusion matrix reviewed, no major sign confusions.
+**Goal**: Trained `action_model.h5` with >90% test accuracy. 3-layer LSTM with BatchNorm, Dropout, EarlyStopping
 **Depends on**: Phase 5
-**Research**: Likely (Colab GPU runtime, Keras API compatibility on TF 2.15+)
-**Research topics**: TF 2.15 Keras save format (.h5 vs SavedModel), Colab T4 GPU memory for LSTM, batch size tuning for 300 sequences
-**Plans**: TBD
-
-Plans:
-- [ ] 06-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 7: Real-Time Inference
-**Goal**: `test_realtime.py` runs sign detection on local webcam — sliding window buffer, confidence threshold (0.7), stability filter (8 consecutive same predictions), probability bar visualization
+**Goal**: `test_realtime.py` with sliding window, confidence threshold, stability filter
 **Depends on**: Phase 6
-**Research**: Unlikely (adapted pattern from reference repos with our improvements)
-**Plans**: TBD
-
-Plans:
-- [ ] 07-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 8: WebSocket Server
-**Goal**: FastAPI `ws_server.py` on port 8001 with `/ws/sign-detection` endpoint. Receives base64 JPEG frames, runs MediaPipe + LSTM, returns JSON predictions. Health check at `/health`.
+**Goal**: FastAPI `ws_server.py` on port 8001 with `/ws/sign-detection` endpoint
 **Depends on**: Phase 7
-**Research**: Likely (WebSocket frame handling, MediaPipe in async context, per-connection state)
-**Research topics**: FastAPI WebSocket best practices for long-running ML inference, MediaPipe thread safety with asyncio, handling backpressure when inference is slower than frame arrival
-**Plans**: TBD
-
-Plans:
-- [ ] 08-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 9: Integration Testing
-**Goal**: End-to-end verified: browser sends base64 frames via WebSocket, server returns predictions with <500ms latency. Idle detection working (no hallucinated signs when hands resting). Frame dropping handled gracefully.
+**Goal**: End-to-end verified: browser sends base64 frames, server returns predictions
 **Depends on**: Phase 8
-**Research**: Likely (browser-to-WebSocket frame pipeline optimization)
-**Research topics**: Base64 JPEG encoding overhead vs raw frames, optimal frame rate (5 vs 10 FPS), WebSocket message queuing under load
-**Plans**: TBD
-
-Plans:
-- [ ] 09-01: TBD
+**Plans**: Completed (pre-GSD)
 
 ### Phase 10: Polish & Demo Support
-**Goal**: Confidence threshold and stability filter tuned for demo conditions. False positives minimized. Server runs stably for recording sessions. Team supported with demo video recording.
+**Goal**: Confidence threshold and stability filter tuned for demo conditions
 **Depends on**: Phase 9
-**Research**: Unlikely (parameter tuning, no new technology)
+**Plans**: Completed (pre-GSD)
+
+</details>
+
+### 🚧 v1.1 Refinement & Testing (In Progress)
+
+**Milestone Goal:** Resolve dependency hell, harden the pipeline against edge cases and security issues, add proper test coverage, and instrument for performance monitoring.
+
+- [x] **Phase 11: Dependency Resolution** - Python 3.12 venv, pinned requirements install, full import + MediaPipe verification
+- [ ] **Phase 12: Consolidate Constants & Config** - Deduplicate constants, centralize config with env var overrides, fix relative MODEL_PATH
+- [ ] **Phase 13: Error Handling & Input Validation** - Specific exceptions, data URL validation, payload size limits, model-load safety
+- [ ] **Phase 14: Security Hardening** - Fix CORS wildcard+credentials, add frame rate limiting, basic API key auth
+- [ ] **Phase 15: Unit Tests** - pytest setup, unit tests for core functions with mocks
+- [ ] **Phase 16: Edge Case & Negative Tests** - Invalid inputs, corrupted data, oversized payloads
+- [ ] **Phase 17: Performance Instrumentation** - Latency logging, timing middleware, slow-prediction warnings
+- [ ] **Phase 18: Protocol Docs & Modernization** - WebSocket schema docs, FastAPI lifespan migration
+
+#### Phase 11: Dependency Resolution
+**Goal**: Working Python 3.12 venv with all pinned dependencies installed and verified. MediaPipe, TensorFlow, OpenCV all import cleanly. Webcam + MediaPipe Holistic detection confirmed working. All existing scripts run without import errors.
+**Depends on**: Previous milestone complete
+**Research**: Unlikely (Python 3.12 already installed, mediapipe resolves on 3.12, all versions pinned)
+**Plans**: 1/1 complete
+
+Plans:
+- [x] 11-01: Create venv, install deps, verify environment, update PROJECT.md
+
+#### Phase 12: Consolidate Constants & Config
+**Goal**: Single source of truth for ACTIONS, SEQUENCE_LENGTH, NUM_SEQUENCES in `ml/utils.py`. HOST, PORT, CONFIDENCE_THRESHOLD, STABILITY_WINDOW centralized with environment variable overrides. MODEL_PATH uses absolute path resolution.
+**Depends on**: Phase 11
+**Research**: Unlikely (internal refactoring, Python stdlib)
 **Plans**: TBD
 
 Plans:
-- [ ] 10-01: TBD
+- [ ] 12-01: TBD
+
+#### Phase 13: Error Handling & Input Validation
+**Goal**: WebSocket server uses specific exception types (binascii.Error, cv2.error, ValueError) instead of bare `except Exception`. Data URL parsing validated before split. Payload size limit enforced (max 5MB). Model file existence checked at startup with clear error message.
+**Depends on**: Phase 12
+**Research**: Unlikely (standard Python error handling patterns)
+**Plans**: TBD
+
+Plans:
+- [ ] 13-01: TBD
+
+#### Phase 14: Security Hardening
+**Goal**: CORS restricted to frontend domain (no wildcard+credentials). Per-client frame rate limiting (max 60 frames per 10 seconds). Basic API key validation on WebSocket connect.
+**Depends on**: Phase 13
+**Research**: Likely (FastAPI WebSocket auth patterns, rate limiting middleware options)
+**Research topics**: FastAPI WebSocket authentication best practices, starlette rate limiting, per-connection state for rate tracking
+**Plans**: TBD
+
+Plans:
+- [ ] 14-01: TBD
+
+#### Phase 15: Unit Tests
+**Goal**: pytest configured with test fixtures. Unit tests for `extract_keypoints()`, `decode_frame()`, `mediapipe_detection()` using mocks. Contract test for (1662,) keypoint shape. All tests pass in CI-compatible mode (no webcam required).
+**Depends on**: Phase 13
+**Research**: Unlikely (pytest is established, functions are pure or easily mockable)
+**Plans**: TBD
+
+Plans:
+- [ ] 15-01: TBD
+
+#### Phase 16: Edge Case & Negative Tests
+**Goal**: Tests for invalid input formats, corrupted base64 data, oversized payloads, malformed WebSocket messages. Server handles all gracefully without crashing.
+**Depends on**: Phase 15
+**Research**: Unlikely (standard test patterns with fixtures)
+**Plans**: TBD
+
+Plans:
+- [ ] 16-01: TBD
+
+#### Phase 17: Performance Instrumentation
+**Goal**: Timing around MediaPipe detection and LSTM inference in WebSocket server. Slow prediction logging (>200ms). Per-request latency metrics available at `/health` endpoint.
+**Depends on**: Phase 13
+**Research**: Unlikely (Python timing/logging, existing FastAPI patterns)
+**Plans**: TBD
+
+Plans:
+- [ ] 17-01: TBD
+
+#### Phase 18: Protocol Docs & Modernization
+**Goal**: WebSocket message schema documented (connection lifecycle, request/response formats, error codes). FastAPI `@app.on_event("startup")` replaced with lifespan handlers. Runtime keypoint shape assertion added.
+**Depends on**: Phase 17
+**Research**: Likely (FastAPI lifespan API current best practices)
+**Research topics**: FastAPI lifespan context manager pattern, asynccontextmanager usage with model loading
+**Plans**: TBD
+
+Plans:
+- [ ] 18-01: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+Phases execute in numeric order: 1 → 2 → ... → 10 → 11 → 12 → ... → 18
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Environment Setup | 0/? | Not started | - |
-| 2. Utility Functions | 0/? | Not started | - |
-| 3. Data Collection Script | 0/? | Not started | - |
-| 4. Data Recording | 0/? | Not started | - |
-| 5. Data Verification | 0/? | Not started | - |
-| 6. Model Training | 0/? | Not started | - |
-| 7. Real-Time Inference | 0/? | Not started | - |
-| 8. WebSocket Server | 0/? | Not started | - |
-| 9. Integration Testing | 0/? | Not started | - |
-| 10. Polish & Demo Support | 0/? | Not started | - |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Environment Setup | v1.0 | -/- | Complete | 2026-02-09 |
+| 2. Utility Functions | v1.0 | -/- | Complete | 2026-02-09 |
+| 3. Data Collection Script | v1.0 | -/- | Complete | 2026-02-09 |
+| 4. Data Recording | v1.0 | -/- | Complete | 2026-02-09 |
+| 5. Data Verification | v1.0 | -/- | Complete | 2026-02-09 |
+| 6. Model Training | v1.0 | -/- | Complete | 2026-02-09 |
+| 7. Real-Time Inference | v1.0 | -/- | Complete | 2026-02-09 |
+| 8. WebSocket Server | v1.0 | -/- | Complete | 2026-02-09 |
+| 9. Integration Testing | v1.0 | -/- | Complete | 2026-02-09 |
+| 10. Polish & Demo Support | v1.0 | -/- | Complete | 2026-02-09 |
+| 11. Dependency Resolution | v1.1 | 1/1 | Complete | 2026-02-10 |
+| 12. Consolidate Constants & Config | v1.1 | 0/? | Not started | - |
+| 13. Error Handling & Input Validation | v1.1 | 0/? | Not started | - |
+| 14. Security Hardening | v1.1 | 0/? | Not started | - |
+| 15. Unit Tests | v1.1 | 0/? | Not started | - |
+| 16. Edge Case & Negative Tests | v1.1 | 0/? | Not started | - |
+| 17. Performance Instrumentation | v1.1 | 0/? | Not started | - |
+| 18. Protocol Docs & Modernization | v1.1 | 0/? | Not started | - |

@@ -14,6 +14,7 @@ Run:
 
 import base64
 import binascii
+import contextlib
 import json
 import logging
 import os
@@ -44,8 +45,30 @@ from utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ws_server")
 
+# --- Global model (loaded once at startup) ---
+model = None
+
+# --- Inference timing ---
+inference_times = deque(maxlen=100)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    global model
+    logger.info(f"Loading model from {MODEL_PATH}...")
+    if not os.path.isfile(MODEL_PATH):
+        logger.error(f"Model file not found at {MODEL_PATH}. Server will start but predictions will not work.")
+    else:
+        try:
+            model = tf.keras.models.load_model(MODEL_PATH)
+            logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}. Server will start but predictions will not work.")
+    yield
+
+
 # --- App ---
-app = FastAPI(title="SenseAI Sign Detection", version="1.0.0")
+app = FastAPI(title="SenseAI Sign Detection", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,26 +77,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- Global model (loaded once at startup) ---
-model = None
-
-# --- Inference timing ---
-inference_times = deque(maxlen=100)
-
-
-@app.on_event("startup")
-async def load_model():
-    global model
-    logger.info(f"Loading model from {MODEL_PATH}...")
-    if not os.path.isfile(MODEL_PATH):
-        logger.error(f"Model file not found at {MODEL_PATH}. Server will start but predictions will not work.")
-        return
-    try:
-        model = tf.keras.models.load_model(MODEL_PATH)
-        logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
-    except Exception as e:
-        logger.error(f"Failed to load model: {e}. Server will start but predictions will not work.")
 
 
 @app.get("/health")

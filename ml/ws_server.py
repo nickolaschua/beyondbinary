@@ -130,6 +130,13 @@ def decode_frame(data: str) -> np.ndarray | None:
 
 @app.websocket("/ws/sign-detection")
 async def sign_detection(websocket: WebSocket):
+    # Optional API key authentication
+    if API_KEY is not None:
+        key = websocket.query_params.get('api_key')
+        if key != API_KEY:
+            await websocket.close(code=4003, reason='Invalid or missing API key')
+            return
+
     await websocket.accept()
     client = websocket.client
     logger.info(f"Client connected: {client}")

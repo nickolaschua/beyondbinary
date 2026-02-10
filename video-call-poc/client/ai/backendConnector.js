@@ -23,6 +23,11 @@ export class BackendConnector {
     this.onTtsChunk = null;
     this.onTtsAudioEnd = null;
     this.onTtsError = null;
+    this.onPeerJoined = null;
+    this.onPeerLeft = null;
+    this.onWebrtcOffer = null;
+    this.onWebrtcAnswer = null;
+    this.onWebrtcIceCandidate = null;
     this._useWebSpeech = !!SpeechRecognition;
     this._roomId = null;
     this._profileType = 'deaf';
@@ -59,6 +64,33 @@ export class BackendConnector {
       sender: 'local',
       text: String(text).trim(),
       tts: !!tts,
+    }));
+  }
+
+  sendWebrtcOffer(offer, targetPeerId = null) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this._roomId) return;
+    this.ws.send(JSON.stringify({
+      type: 'webrtc_offer',
+      target_peer_id: targetPeerId,
+      offer,
+    }));
+  }
+
+  sendWebrtcAnswer(answer, targetPeerId = null) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this._roomId) return;
+    this.ws.send(JSON.stringify({
+      type: 'webrtc_answer',
+      target_peer_id: targetPeerId,
+      answer,
+    }));
+  }
+
+  sendWebrtcIceCandidate(candidate, targetPeerId = null) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this._roomId) return;
+    this.ws.send(JSON.stringify({
+      type: 'webrtc_ice_candidate',
+      target_peer_id: targetPeerId,
+      candidate,
     }));
   }
 
@@ -175,6 +207,36 @@ export class BackendConnector {
               console.warn('[Backend] TTS error:', msg.message);
               if (this.onTtsError) this.onTtsError(msg.message);
               if (this.onError) this.onError(msg.message);
+              break;
+            case 'peer_joined':
+              if (this.onPeerJoined) this.onPeerJoined({ peerId: msg.peer_id });
+              break;
+            case 'peer_left':
+              if (this.onPeerLeft) this.onPeerLeft({ peerId: msg.peer_id });
+              break;
+            case 'webrtc_offer':
+              if (this.onWebrtcOffer) {
+                this.onWebrtcOffer({
+                  fromPeerId: msg.from_peer_id,
+                  offer: msg.offer,
+                });
+              }
+              break;
+            case 'webrtc_answer':
+              if (this.onWebrtcAnswer) {
+                this.onWebrtcAnswer({
+                  fromPeerId: msg.from_peer_id,
+                  answer: msg.answer,
+                });
+              }
+              break;
+            case 'webrtc_ice_candidate':
+              if (this.onWebrtcIceCandidate) {
+                this.onWebrtcIceCandidate({
+                  fromPeerId: msg.from_peer_id,
+                  candidate: msg.candidate,
+                });
+              }
               break;
             default:
               break;

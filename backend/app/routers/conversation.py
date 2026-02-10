@@ -16,6 +16,9 @@ Frontend message format:
     { "type": "set_room", "room": "room_id" }
     { "type": "set_tts_preference", "value": true|false }  # recipient wants TTS for incoming chat
     { "type": "chat_message", "room": "room_id", "sender": "local"|"remote", "text": "...", "tts": true|false }
+    { "type": "webrtc_offer", "target_peer_id": "...", "offer": {...} }
+    { "type": "webrtc_answer", "target_peer_id": "...", "answer": {...} }
+    { "type": "webrtc_ice_candidate", "target_peer_id": "...", "candidate": {...} }
 
 Backend response format:
     { "type": "transcript", "text": "...", "tone": "analyzing...", "tone_category": "neutral" }  // Sent immediately (~500ms)
@@ -25,6 +28,11 @@ Backend response format:
     { "type": "status", "message": "listening" | "processing" | "idle" }
     { "type": "error", "message": "..." }
     { "type": "chat_message", "room": "...", "sender": "remote", "text": "...", "tts": true|false }
+    { "type": "peer_joined", "peer_id": "..." }
+    { "type": "peer_left", "peer_id": "..." }
+    { "type": "webrtc_offer", "from_peer_id": "...", "offer": {...} }
+    { "type": "webrtc_answer", "from_peer_id": "...", "answer": {...} }
+    { "type": "webrtc_ice_candidate", "from_peer_id": "...", "candidate": {...} }
     { "type": "tts_audio_chunk", "audio_base64": "..." }
     { "type": "tts_audio_end" }
     { "type": "tts_error", "message": "..." }
@@ -33,6 +41,7 @@ Backend response format:
 import asyncio
 import base64
 import json
+import re
 import time
 import uuid
 
@@ -40,7 +49,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
 from app.services.claude_intelligence import process_transcript
-from app.services.openai_stt import get_filename_for_format, transcribe_audio
+from app.services.openai_stt import get_filename_for_format as get_filename_for_format_openai
+from app.services.openai_stt import transcribe_audio as transcribe_audio_openai
+from app.services.groq_stt import get_filename_for_format as get_filename_for_format_groq
+from app.services.groq_stt import transcribe_audio as transcribe_audio_groq
 from app.services.hume_tone import analyze_tone_from_audio
 from app.services.tone_mapper import get_tone_category
 from app.services.prosody_buffer import ProsodyBuffer
@@ -50,9 +62,45 @@ from app.services.elevenlabs_tts import text_to_speech_stream
 router = APIRouter()
 
 # In-memory room registry: room_id -> list of conn_info dicts.
-# Each conn_info: {"ws": WebSocket, "profile_type": str, "wants_tts": bool}
+# Each conn_info: {"ws": WebSocket, "profile_type": str, "wants_tts": bool, "client_id": str}
 # Updated on set_profile, set_room, set_tts_preference.
 _room_registry: dict[str, list[dict]] = {}
+
+
+def _pick_stt_backend():
+    """Select STT backend with fallback based on env + available API keys."""
+    preferred = (settings.STT_PROVIDER or "groq").lower()
+
+    if preferred == "groq" and settings.GROQ_API_KEY:
+        return transcribe_audio_groq, get_filename_for_format_groq, "groq"
+    if preferred == "openai" and settings.OPENAI_API_KEY:
+        return transcribe_audio_openai, get_filename_for_format_openai, "openai"
+
+    if settings.GROQ_API_KEY:
+        return transcribe_audio_groq, get_filename_for_format_groq, "groq"
+    return transcribe_audio_openai, get_filename_for_format_openai, "openai"
+
+
+def _is_low_signal_transcript(text: str) -> bool:
+    """Ignore punctuation-only / dot-noise transcripts and common Whisper hallucinations."""
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if not re.search(r"[A-Za-z0-9]", stripped):
+        return True
+    # Filter out common Whisper hallucination phrases (case-insensitive)
+    lower = stripped.lower()
+    hallucinations = [
+        "thank you",
+        "thanks",
+        "thank you.",
+        "thanks.",
+        "thank you for watching",
+        "thanks for watching",
+    ]
+    if lower in hallucinations:
+        return True
+    return False
 
 
 def _remove_conn_from_room(conn_info: dict, room_id: str | None) -> None:
@@ -95,7 +143,13 @@ async def conversation_ws(websocket: WebSocket):
 
     # Per-connection state; conn_info is shared with room registry for profile_type and fan-out
     profile_type = "deaf"
-    conn_info: dict = {"ws": websocket, "profile_type": profile_type, "wants_tts": False}
+    client_id = str(uuid.uuid4())
+    conn_info: dict = {
+        "ws": websocket,
+        "profile_type": profile_type,
+        "wants_tts": False,
+        "client_id": client_id,
+    }
     room_id: str | None = None
     conversation_history = ""
     is_listening = False
@@ -104,6 +158,8 @@ async def conversation_ws(websocket: WebSocket):
     use_web_speech_for_utterances = False  # True once we receive text_transcript (hybrid mode)
     pending_utterances: list[dict] = []  # [{id, start, end, tone_confidence}, ...] for late tone updates
     PENDING_UTTERANCE_LIMIT = 10
+    transcribe_audio, get_filename_for_format, stt_provider = _pick_stt_backend()
+    print(f"🗣️ STT backend: {stt_provider}")
 
     async def on_tone_sample(tone_result: dict, start_time: float, end_time: float):
         """Store tone sample and emit late tone_update for overlapping pending utterances."""
@@ -136,14 +192,17 @@ async def conversation_ws(websocket: WebSocket):
                 continue
             agg_label = aggregated["label"]
             agg_conf = aggregated["confidence"]
-            await websocket.send_json({
-                "type": "tone_update",
-                "utterance_id": u["id"],
-                "tone": agg_label,
-                "tone_category": get_tone_category(agg_label),
-                "tone_confidence": agg_conf,
-                "top_emotions": [],
-            })
+            try:
+                await websocket.send_json({
+                    "type": "tone_update",
+                    "utterance_id": u["id"],
+                    "tone": agg_label,
+                    "tone_category": get_tone_category(agg_label),
+                    "tone_confidence": agg_conf,
+                    "top_emotions": [],
+                })
+            except Exception:
+                return
             u["tone_confidence"] = agg_conf
             updated_any = True
             print(f"📤 Late tone_update: {u['id'][:8]}... → {agg_label}")
@@ -152,14 +211,17 @@ async def conversation_ws(websocket: WebSocket):
         if not updated_any and pending_utterances:
             for u in reversed(pending_utterances):
                 if (u.get("tone_confidence") or 0) < 0.2:
-                    await websocket.send_json({
-                        "type": "tone_update",
-                        "utterance_id": u["id"],
-                        "tone": tone_label,
-                        "tone_category": get_tone_category(tone_label),
-                        "tone_confidence": tone_conf,
-                        "top_emotions": [],
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "tone_update",
+                            "utterance_id": u["id"],
+                            "tone": tone_label,
+                            "tone_category": get_tone_category(tone_label),
+                            "tone_confidence": tone_conf,
+                            "top_emotions": [],
+                        })
+                    except Exception:
+                        return
                     u["tone_confidence"] = tone_conf
                     print(f"📤 Late tone_update (fallback): {u['id'][:8]}... → {tone_label}")
                     break
@@ -196,10 +258,48 @@ async def conversation_ws(websocket: WebSocket):
                     _room_registry[room_id] = []
                 _room_registry[room_id].append(conn_info)
                 await websocket.send_json({"type": "status", "message": f"room_set:{room_id}"})
+                # Notify existing peers so one side can create an offer.
+                for peer in _room_registry.get(room_id, []):
+                    if peer["ws"] is websocket:
+                        continue
+                    try:
+                        await peer["ws"].send_json({
+                            "type": "peer_joined",
+                            "peer_id": client_id,
+                        })
+                    except Exception:
+                        continue
                 continue
 
             if msg_type == "set_tts_preference":
                 conn_info["wants_tts"] = bool(message.get("value", False))
+                continue
+
+            # WebRTC signaling fanout inside the same room (1:1 friendly, also works with target_peer_id).
+            if msg_type in ("webrtc_offer", "webrtc_answer", "webrtc_ice_candidate"):
+                if not room_id:
+                    continue
+                target_peer_id = (message.get("target_peer_id") or "").strip()
+                peers = _room_registry.get(room_id, [])
+                for peer in peers:
+                    if peer["ws"] is websocket:
+                        continue
+                    if target_peer_id and peer.get("client_id") != target_peer_id:
+                        continue
+                    payload = {
+                        "type": msg_type,
+                        "from_peer_id": client_id,
+                    }
+                    if msg_type == "webrtc_offer":
+                        payload["offer"] = message.get("offer")
+                    elif msg_type == "webrtc_answer":
+                        payload["answer"] = message.get("answer")
+                    else:
+                        payload["candidate"] = message.get("candidate")
+                    try:
+                        await peer["ws"].send_json(payload)
+                    except Exception:
+                        continue
                 continue
 
             if msg_type == "chat_message":
@@ -430,11 +530,13 @@ async def conversation_ws(websocket: WebSocket):
             utterance_start = chunk_received_time - duration
             print(f"📝 Transcript: '{transcript_text}'")
 
-            if not transcript_text:
+            if _is_low_signal_transcript(transcript_text):
                 err = transcript_result.get("error")
                 duration = transcript_result.get("duration")
                 if err:
                     print(f"⚠️  Empty transcript (API error): {err}")
+                elif transcript_text:
+                    print(f"⚠️  Low-signal transcript skipped: '{transcript_text}'")
                 elif duration is not None:
                     print(f"⚠️  Empty transcript (possible silence or unsupported format), duration={duration}s")
                 else:
@@ -453,6 +555,16 @@ async def conversation_ws(websocket: WebSocket):
             tone_label = aggregated["label"] if aggregated else "neutral"
             tone_confidence = aggregated["confidence"] if aggregated else 0.0
             tone_category = get_tone_category(tone_label)
+
+            # Track audio utterances too, so late Hume results can replace neutral labels.
+            pending_utterances.append({
+                "id": utterance_id,
+                "start": utterance_start,
+                "end": utterance_end,
+                "tone_confidence": tone_confidence,
+            })
+            if len(pending_utterances) > PENDING_UTTERANCE_LIMIT:
+                pending_utterances.pop(0)
 
             # utterance_created (new contract) - always include tone
             await websocket.send_json({
@@ -522,6 +634,18 @@ async def conversation_ws(websocket: WebSocket):
         except Exception:
             pass
     finally:
+        # Notify peers in current room before removing this connection.
+        if room_id and room_id in _room_registry:
+            for peer in _room_registry.get(room_id, []):
+                if peer["ws"] is websocket:
+                    continue
+                try:
+                    await peer["ws"].send_json({
+                        "type": "peer_left",
+                        "peer_id": client_id,
+                    })
+                except Exception:
+                    continue
         _remove_conn_from_room(conn_info, room_id)
         await prosody_buffer.stop()
         print(f"Conversation WS: cleanup complete")

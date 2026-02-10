@@ -62,6 +62,8 @@ class ProsodyBuffer:
         
         # Timing
         self.last_analysis_time = 0.0
+        self.last_analyzed_buffer_end = 0.0
+        self.last_append_time = 0.0
         self.analysis_task: Optional[asyncio.Task] = None
         self.monitor_task: Optional[asyncio.Task] = None  # Background monitor
 
@@ -84,6 +86,7 @@ class ProsodyBuffer:
             
             # Add new chunk
             self.buffer.append((audio_bytes, current_time))
+            self.last_append_time = current_time
             
             # Evict old chunks outside the window
             cutoff_time = current_time - self.window_size
@@ -114,6 +117,21 @@ class ProsodyBuffer:
             bool: True if analysis_interval has elapsed
         """
         return (time.time() - self.last_analysis_time) >= self.analysis_interval
+
+    def has_new_audio(self) -> bool:
+        """Return True when buffer has unseen audio since last analysis."""
+        if not self.buffer:
+            return False
+        latest_ts = self.buffer[-1][1]
+        return latest_ts > (self.last_analyzed_buffer_end + 1e-6)
+
+    def has_recent_audio(self) -> bool:
+        """Return True when audio arrived recently enough to justify another Hume call."""
+        if self.last_append_time <= 0:
+            return False
+        idle_for = time.time() - self.last_append_time
+        # After brief silence, stop re-analyzing stale chunks.
+        return idle_for <= max(1.0, self.analysis_interval * 2.0)
     
     async def trigger_analysis_if_ready(self) -> None:
         """
@@ -121,10 +139,19 @@ class ProsodyBuffer:
 
         Launches analysis as a background task - does NOT block caller.
         """
+        if not self._running:
+            return
+
         if not self.should_analyze_now():
             return
 
         if not self.tone_analyzer:
+            return
+
+        if not self.has_new_audio():
+            return
+
+        if not self.has_recent_audio():
             return
 
         # Don't launch if previous analysis is still running
@@ -162,6 +189,9 @@ class ProsodyBuffer:
         Implements tone smoothing to avoid jitter.
         """
         try:
+            if not self._running:
+                return
+
             # Mark analysis time and capture buffer state BEFORE Hume call
             # (sample time range must reflect when audio was recorded, not when Hume returns)
             grab_time = time.time()
@@ -171,6 +201,7 @@ class ProsodyBuffer:
             window_audio = self.get_buffer_audio()
             buffer_start = self.buffer[0][1] if self.buffer else grab_time
             buffer_end = self.buffer[-1][1] if self.buffer else grab_time
+            self.last_analyzed_buffer_end = buffer_end
             
             if len(window_audio) < 8000:  # Skip if buffer too small (~0.5s at 16kHz)
                 return
@@ -179,6 +210,9 @@ class ProsodyBuffer:
             
             # Run analysis (this is the slow part - 500-1500ms)
             tone_result = await self.tone_analyzer(window_audio)
+
+            if not self._running:
+                return
             
             if not tone_result.get("success"):
                 # Analysis failed - reuse last known tone
@@ -275,6 +309,8 @@ class ProsodyBuffer:
             except asyncio.CancelledError:
                 pass
 
+        self.clear()
+
         print("🎭 ProsodyBuffer stopped")
     
     def clear(self) -> None:
@@ -284,3 +320,4 @@ class ProsodyBuffer:
         self.last_tone = None
         self.tone_persistence_count = 0
         self.last_analysis_time = 0.0
+        self.last_analyzed_buffer_end = 0.0

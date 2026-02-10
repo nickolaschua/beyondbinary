@@ -12,6 +12,7 @@ CRITICAL CONTRACT:
 
 import os
 from collections import deque
+from typing import Any
 
 import cv2
 import mediapipe as mp
@@ -48,7 +49,7 @@ mp_drawing = mp.solutions.drawing_utils
 # DETECTION
 # ========================
 
-def mediapipe_detection(image, model):
+def mediapipe_detection(image: np.ndarray, model: Any) -> tuple[np.ndarray, Any]:
     """
     Run MediaPipe Holistic detection on a BGR frame.
 
@@ -71,7 +72,7 @@ def mediapipe_detection(image, model):
 # VISUALIZATION
 # ========================
 
-def draw_landmarks(image, results):
+def draw_landmarks(image: np.ndarray, results: Any) -> None:
     """
     Draw all detected landmarks on frame for visual feedback.
 
@@ -113,7 +114,7 @@ def draw_landmarks(image, results):
 # KEYPOINT EXTRACTION
 # ========================
 
-def extract_keypoints(results):
+def extract_keypoints(results: Any) -> np.ndarray:
     """
     Extract all landmarks into a flat numpy array of length 1662.
 

@@ -5,7 +5,17 @@ Provides mock MediaPipe Holistic results for testing extract_keypoints
 without requiring a webcam, GPU, or MediaPipe runtime.
 """
 
+import sys
 import types
+from unittest.mock import MagicMock
+
+# Mock mediapipe.solutions before any test module imports utils or ws_server.
+# Required because mediapipe >= 0.10.22 removed mp.solutions.holistic.
+if "mediapipe" not in sys.modules:
+    _mock_mp = MagicMock()
+    _mock_mp.solutions.holistic = MagicMock()
+    _mock_mp.solutions.drawing_utils = MagicMock()
+    sys.modules["mediapipe"] = _mock_mp
 
 import numpy as np
 import pytest

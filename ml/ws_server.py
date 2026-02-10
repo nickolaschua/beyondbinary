@@ -129,6 +129,7 @@ async def sign_detection(websocket: WebSocket):
     holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5)
     keypoint_buffer = deque(maxlen=SEQUENCE_LENGTH)
     stability_filter = StabilityFilter(window_size=STABILITY_WINDOW, threshold=CONFIDENCE_THRESHOLD)
+    frame_times = deque(maxlen=60)
     frames_processed = 0
 
     try:
@@ -144,6 +145,12 @@ async def sign_detection(websocket: WebSocket):
 
             if msg.get("type") != "frame":
                 await websocket.send_json({"type": "error", "message": f"Unknown message type: {msg.get('type')}"})
+                continue
+
+            # Per-client frame rate limiting
+            frame_times.append(time.time())
+            if len(frame_times) == 60 and frame_times[-1] - frame_times[0] < 10.0:
+                await websocket.send_json({"type": "error", "message": "Rate limit exceeded: max 60 frames per 10 seconds"})
                 continue
 
             frame_data = msg.get("frame", "")

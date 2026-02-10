@@ -12,13 +12,18 @@ const utterances = new Map();
 const MAX_UTTERANCES_DISPLAY = 20;
 
 function addUtterance(utteranceId, text, tone) {
-  utterances.set(utteranceId, { id: utteranceId, text, tone });
+  const existing = utterances.get(utteranceId);
+  const mergedTone = tone ?? existing?.tone;
+  utterances.set(utteranceId, { id: utteranceId, text, tone: mergedTone });
   renderUtterancesList();
 }
 
 function updateUtteranceTone(utteranceId, tone) {
   const u = utterances.get(utteranceId);
-  if (u && !u.tone) {
+  if (!u) return;
+  const currentConf = u.tone?.confidence ?? 0;
+  const newConf = tone?.confidence ?? 0;
+  if (!u.tone || currentConf < 0.3 || newConf > currentConf) {
     u.tone = tone;
     renderUtterancesList();
   }

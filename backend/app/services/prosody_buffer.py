@@ -162,11 +162,15 @@ class ProsodyBuffer:
         Implements tone smoothing to avoid jitter.
         """
         try:
-            # Mark analysis time BEFORE running to prevent double-trigger
-            self.last_analysis_time = time.time()
+            # Mark analysis time and capture buffer state BEFORE Hume call
+            # (sample time range must reflect when audio was recorded, not when Hume returns)
+            grab_time = time.time()
+            self.last_analysis_time = grab_time
             
-            # Get current window audio
+            # Get current window audio and capture timestamps before async Hume call
             window_audio = self.get_buffer_audio()
+            buffer_start = self.buffer[0][1] if self.buffer else grab_time
+            buffer_end = self.buffer[-1][1] if self.buffer else grab_time
             
             if len(window_audio) < 8000:  # Skip if buffer too small (~0.5s at 16kHz)
                 return
@@ -194,10 +198,10 @@ class ProsodyBuffer:
                 self.current_tone = tone_result
                 self.last_tone = tone_result
 
-                # Compute time range for this analysis window
+                # Use buffer timestamps so sample overlaps with Web Speech utterance times
                 analysis_duration = len(window_audio) / BYTES_PER_SECOND
-                end_time = time.time()
-                start_time = end_time - analysis_duration
+                end_time = buffer_end
+                start_time = max(buffer_start, end_time - analysis_duration)
 
                 # Emit time-stamped sample for aggregation
                 if self.on_tone_sample:

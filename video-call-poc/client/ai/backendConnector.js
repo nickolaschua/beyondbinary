@@ -36,10 +36,11 @@ export class BackendConnector {
       this.ws.onopen = () => {
         console.log('[Backend] WebSocket connected');
         this.ws.send(JSON.stringify({ type: 'set_profile', profile_type: 'deaf' }));
-        this.ws.send(JSON.stringify({ type: 'start_listening' }));
+        this.ws.send(JSON.stringify({ type: 'start_listening', use_web_speech: this._useWebSpeech }));
         if (this._useWebSpeech) {
           this._startWebSpeech(stream);
-          console.log('[Backend] Using Web Speech for instant captions');
+          this._startRecording(stream);
+          console.log('[Backend] Hybrid: Web Speech captions + audio for Hume tone');
         } else {
           this._startRecording(stream);
         }
@@ -127,7 +128,7 @@ export class BackendConnector {
       this.ws.onclose = () => {
         console.log('[Backend] WebSocket closed');
         if (this._useWebSpeech) this._stopWebSpeech();
-        else this._stopRecording();
+        this._stopRecording();
       };
     });
   }
@@ -270,7 +271,7 @@ export class BackendConnector {
     }
     this.ws = null;
     if (this._useWebSpeech) this._stopWebSpeech();
-    else this._stopRecording();
+    this._stopRecording();
     console.log('[Backend] Stopped');
   }
 }

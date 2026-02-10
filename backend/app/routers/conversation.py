@@ -32,7 +32,6 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
-from app.services.afinn_fallback import analyze_text_sentiment
 from app.services.claude_intelligence import process_transcript
 from app.services.openai_stt import get_filename_for_format, transcribe_audio
 from app.services.hume_tone import analyze_tone_from_audio
@@ -54,9 +53,12 @@ async def conversation_ws(websocket: WebSocket):
     is_listening = False
     last_utterance_id: str | None = None
     tone_aggregator = ToneAggregator()
+    use_web_speech_for_utterances = False  # True once we receive text_transcript (hybrid mode)
+    pending_utterances: list[dict] = []  # [{id, start, end, tone_confidence}, ...] for late tone updates
+    PENDING_UTTERANCE_LIMIT = 10
 
     async def on_tone_sample(tone_result: dict, start_time: float, end_time: float):
-        """Store time-stamped tone sample for utterance aggregation."""
+        """Store tone sample and emit late tone_update for overlapping pending utterances."""
         sample = ToneSample(
             start_time=start_time,
             end_time=end_time,
@@ -64,6 +66,55 @@ async def conversation_ws(websocket: WebSocket):
             confidence=tone_result.get("confidence", 0.0),
         )
         tone_aggregator.add_sample(sample)
+
+        # Emit tone_update for pending utterances that overlap and lacked confident tone
+        tone_label = tone_result.get("primary_tone", "neutral")
+        tone_conf = tone_result.get("confidence", 0.0)
+        if tone_conf < 0.1:
+            return
+
+        updated_any = False
+        for u in list(pending_utterances):
+            if (u.get("tone_confidence") or 0) >= 0.3:
+                continue
+            u_start, u_end = u["start"], u["end"]
+            overlap = min(u_end, end_time) - max(u_start, start_time)
+            if overlap <= 0:
+                continue
+            aggregated = tone_aggregator.aggregate_for_utterance(
+                u_start, u_end, min_overlap_ratio=0.05, min_confidence=0.1
+            )
+            if not aggregated or aggregated.get("confidence", 0) < 0.1:
+                continue
+            agg_label = aggregated["label"]
+            agg_conf = aggregated["confidence"]
+            await websocket.send_json({
+                "type": "tone_update",
+                "utterance_id": u["id"],
+                "tone": agg_label,
+                "tone_category": get_tone_category(agg_label),
+                "tone_confidence": agg_conf,
+                "top_emotions": [],
+            })
+            u["tone_confidence"] = agg_conf
+            updated_any = True
+            print(f"📤 Late tone_update: {u['id'][:8]}... → {agg_label}")
+
+        # Fallback: if no overlap matched, update the most recent pending utterance
+        if not updated_any and pending_utterances:
+            for u in reversed(pending_utterances):
+                if (u.get("tone_confidence") or 0) < 0.2:
+                    await websocket.send_json({
+                        "type": "tone_update",
+                        "utterance_id": u["id"],
+                        "tone": tone_label,
+                        "tone_category": get_tone_category(tone_label),
+                        "tone_confidence": tone_conf,
+                        "top_emotions": [],
+                    })
+                    u["tone_confidence"] = tone_conf
+                    print(f"📤 Late tone_update (fallback): {u['id'][:8]}... → {tone_label}")
+                    break
 
     prosody_buffer = ProsodyBuffer(
         window_size_seconds=2.5,        # More context for Hume prosody
@@ -88,6 +139,8 @@ async def conversation_ws(websocket: WebSocket):
 
             if msg_type == "start_listening":
                 is_listening = True
+                if message.get("use_web_speech"):
+                    use_web_speech_for_utterances = True
                 await websocket.send_json({"type": "status", "message": "listening"})
                 continue
 
@@ -98,6 +151,7 @@ async def conversation_ws(websocket: WebSocket):
 
             # Handle Web Speech API text input (for instant captions mode)
             if msg_type == "text_transcript":
+                use_web_speech_for_utterances = True
                 if not is_listening:
                     continue
 
@@ -130,20 +184,41 @@ async def conversation_ws(websocket: WebSocket):
 
                 # Only process final transcripts for tone/quick-replies
                 if is_final:
-                    # Use text-based sentiment (no audio available)
-                    fallback = analyze_text_sentiment(transcript_text)
-                    tone_label = fallback.get("primary_tone", "speaking")
-                    tone_category = fallback.get("tone_category", "neutral")
-                    tone_confidence = fallback.get("confidence", 0.5)
+                    # Hume (audio) tone only - no AFINN. Use neutral when no samples yet; late tone_update will overwrite.
+                    now = time.time()
+                    utterance_end = now
+                    utterance_start = now - 5.0  # 5s window for overlap with Hume samples
+                    aggregated = tone_aggregator.aggregate_for_utterance(
+                        utterance_start, utterance_end, min_overlap_ratio=0.1, min_confidence=0.1
+                    )
+                    if aggregated and aggregated.get("confidence", 0) >= 0.1:
+                        tone_label = aggregated["label"]
+                        tone_confidence = aggregated["confidence"]
+                        tone_source = "audio"
+                    else:
+                        tone_label = "neutral"
+                        tone_confidence = 0.0
+                        tone_source = "audio"
+                    tone_category = get_tone_category(tone_label)
+
+                    # Track for late tone updates when Hume returns after we've emitted
+                    pending_utterances.append({
+                        "id": utterance_id,
+                        "start": utterance_start,
+                        "end": utterance_end,
+                        "tone_confidence": tone_confidence,
+                    })
+                    if len(pending_utterances) > PENDING_UTTERANCE_LIMIT:
+                        pending_utterances.pop(0)
 
                     # utterance_created (new contract)
                     await websocket.send_json({
                         "type": "utterance_created",
                         "utterance_id": utterance_id,
-                        "start_time": time.time(),
-                        "end_time": time.time(),
+                        "start_time": utterance_start,
+                        "end_time": utterance_end,
                         "text": transcript_text,
-                        "tone": {"label": tone_label, "confidence": tone_confidence, "source": "text"},
+                        "tone": {"label": tone_label, "confidence": tone_confidence, "source": tone_source},
                         "is_final": True,
                     })
 
@@ -180,6 +255,17 @@ async def conversation_ws(websocket: WebSocket):
                 continue
 
             if msg_type != "audio_chunk" or not is_listening:
+                continue
+
+            # In hybrid mode (Web Speech + audio), use audio only for tone - no Whisper/utterance
+            if use_web_speech_for_utterances:
+                audio_b64 = message.get("audio", "")
+                try:
+                    audio_bytes = base64.b64decode(audio_b64)
+                except Exception:
+                    continue
+                if len(audio_bytes) >= 1000:
+                    await prosody_buffer.append_chunk(audio_bytes)
                 continue
 
             print(f"🎤 Audio chunk received!")

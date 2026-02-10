@@ -20,14 +20,14 @@ export function BrailleCell({ pattern, isNew }: BrailleCellProps) {
     >
       <div className="flex gap-2 mb-1">
         <BrailleDot on={pattern[0]} />
-        <BrailleDot on={pattern[1]} />
-      </div>
-      <div className="flex gap-2 mb-1">
-        <BrailleDot on={pattern[2]} />
         <BrailleDot on={pattern[3]} />
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 mb-1">
+        <BrailleDot on={pattern[1]} />
         <BrailleDot on={pattern[4]} />
+      </div>
+      <div className="flex gap-2">
+        <BrailleDot on={pattern[2]} />
         <BrailleDot on={pattern[5]} />
       </div>
     </div>

@@ -8,6 +8,7 @@ Supports resume — skips sequences that already have data.
 Usage:
     python collect_data.py
     python collect_data.py --actions Hello,Yes
+    python collect_data.py --num_sequences 5
 
 Press 'q' to quit at any time.
 """
@@ -33,7 +34,7 @@ def parse_args(argv=None):
         argv: Argument list (defaults to sys.argv[1:]).
 
     Returns:
-        argparse.Namespace with .actions (list[str]).
+        argparse.Namespace with .actions (list[str]), .num_sequences (int).
     """
     parser = argparse.ArgumentParser(description="SenseAI Data Collection")
     parser.add_argument(
@@ -41,6 +42,12 @@ def parse_args(argv=None):
         type=str,
         default=None,
         help="Comma-separated list of sign names to collect (default: all ACTIONS)",
+    )
+    parser.add_argument(
+        "--num_sequences",
+        type=int,
+        default=NUM_SEQUENCES,
+        help=f"Number of sequences to record per action (default: {NUM_SEQUENCES})",
     )
     args = parser.parse_args(argv)
 
@@ -78,7 +85,7 @@ def sequence_exists(action, sequence):
 def main():
     args = parse_args()
     actions = args.actions
-    num_sequences = NUM_SEQUENCES
+    num_sequences = args.num_sequences
 
     create_directories(actions, num_sequences)
 

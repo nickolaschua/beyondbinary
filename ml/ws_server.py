@@ -13,6 +13,7 @@ Run:
 """
 
 import base64
+import binascii
 import json
 import logging
 import os
@@ -90,8 +91,15 @@ def decode_frame(data: str) -> np.ndarray | None:
     if not data or not data.strip():
         return None
 
+    # Payload size check before any processing
+    if len(data) > 5_000_000:
+        logger.warning("Frame payload exceeds 5MB limit (%d bytes), rejecting", len(data))
+        return None
+
     # Strip data URL prefix if present (e.g. "data:image/jpeg;base64,...")
     if data.startswith("data:"):
+        if "," not in data:
+            return None
         data = data.split(",", 1)[1]
 
     if not data:
@@ -99,7 +107,7 @@ def decode_frame(data: str) -> np.ndarray | None:
 
     try:
         img_bytes = base64.b64decode(data)
-    except Exception:
+    except (binascii.Error, ValueError):
         return None
 
     if not img_bytes:
@@ -206,8 +214,8 @@ async def sign_detection(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info(f"Client disconnected: {client}")
-    except Exception as e:
-        logger.error(f"Error with client {client}: {e}")
+    except Exception:
+        logger.exception("Error with client %s", client)
     finally:
         holistic.close()
         logger.info(f"MediaPipe closed for client: {client}")

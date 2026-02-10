@@ -5,192 +5,151 @@
 ## Naming Patterns
 
 **Files:**
-- snake_case.py for all Python files (`train_model.py`, `ws_server.py`, `collect_data.py`)
-- test_*.py prefix for test scripts (`test_setup.py`, `test_ws_client.py`)
-- UPPERCASE.md for important documents (`PROJECT.md`, `ROADMAP.md`)
+- `snake_case.py` for all Python modules (`collect_data.py`, `ws_server.py`, `train_model.py`)
+- `test_{module}.py` for automated tests alongside source in `ml/tests/`
+- `PascalCase.tsx` for React components (`App.tsx`)
+- `UPPERCASE.md` for important documents (`README.md`, `CLAUDE.md`)
 
 **Functions:**
-- snake_case for all functions (`extract_keypoints`, `mediapipe_detection`, `build_model`, `load_data`)
-- No special prefix for async functions (`async def sign_detection`, `async def load_model`)
-- Descriptive verb-noun naming (`draw_landmarks`, `plot_confusion_matrix`, `parse_args`)
+- `snake_case` for all Python functions (`mediapipe_detection`, `extract_keypoints`, `decode_frame`)
+- `_leading_underscore` for private/helper functions (`_ensure_mediapipe_solutions`, `_make_landmarks`)
+- `camelCase` for TypeScript functions (`handleNext`, `onNodesChange`, `createNode`)
 
 **Variables:**
-- snake_case for variables (`keypoint_buffer`, `prediction_history`, `current_sign`, `frames_processed`)
-- UPPER_SNAKE_CASE for constants (`ACTIONS`, `SEQUENCE_LENGTH`, `CONFIDENCE_THRESHOLD`, `MODEL_PATH`)
-- No underscore prefix for private members
+- `snake_case` for Python variables (`keypoint_buffer`, `frame_times`, `holistic`)
+- `SCREAMING_SNAKE_CASE` for Python constants (`ACTIONS`, `SEQUENCE_LENGTH`, `MODEL_PATH`, `CONFIDENCE_THRESHOLD`)
+- `camelCase` for TypeScript variables (`nodeWidth`, `visibleCount`, `nodePositions`)
 
 **Types:**
-- Minimal type annotations (Python ML/data science style)
-- Type hints on function signatures where used (`data_path: str`, `-> np.ndarray`)
-- No formal type checking (no mypy, pyright)
+- `PascalCase` for Python classes (`StabilityFilter`, `MockLandmark`)
+- `PascalCase` for TypeScript types (`Phase`, `Node`, `Edge`)
+- Type hints on all public Python functions (PEP 484)
+- TypeScript strict mode with `type` keyword for imports
 
 ## Code Style
 
-**Formatting:**
-- No formal formatter configured (no Black, autopep8, .prettierrc)
-- 4-space indentation (PEP 8 compliant)
-- Single quotes for string literals (`'Hello'`, `'frame'`)
-- Double quotes for docstrings (`"""..."""`)
-- Line length target: 80-100 characters
+**Formatting (Python):**
+- 4 spaces indentation (PEP 8)
+- Single quotes for strings
+- No explicit formatter configured (follows PEP 8 manually)
+- Line length: approximately 100 characters (not enforced)
+
+**Formatting (TypeScript):**
+- 2 spaces indentation
+- Single quotes for strings and imports
+- Semicolons used consistently
+- Modern functional component style with hooks
 
 **Linting:**
-- No linter configured (no .pylintrc, .flake8, pyproject.toml linting section)
-- Manual code review for style consistency
-- PEP 8 conventions followed by convention
+- Python: No explicit linter configured (type hints provide static analysis)
+- TypeScript: ESLint 9.39.1 (`vendor/ralph-loop/flowchart/eslint.config.js`)
+  - Extends: `eslint/recommended`, `typescript-eslint/recommended`, `react-hooks/recommended`
+  - TypeScript strict mode: `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`
 
 ## Import Organization
 
-**Order:**
-1. Standard library (`os`, `sys`, `logging`, `argparse`, `asyncio`, `base64`, `json`, `time`)
-2. Third-party packages (`cv2`, `numpy`, `mediapipe`, `tensorflow`, `fastapi`, `websockets`)
-3. Local modules (`from utils import ACTIONS, extract_keypoints, mediapipe_detection`)
+**Python:**
+1. Standard library (`os`, `sys`, `logging`, `argparse`, `collections`, `contextlib`)
+2. Third-party packages (`numpy`, `tensorflow`, `mediapipe`, `cv2`, `fastapi`)
+3. Local imports (`from utils import ACTIONS, extract_keypoints`)
 
-**Grouping:**
-- Blank line between each group
-- Alphabetical within groups (loosely followed)
-- Parenthesized multi-line imports for local modules
+No blank lines between groups in practice. No path aliases.
 
-**Example from `ml/ws_server.py`:**
-```python
-import base64
-import json
-import logging
-import time
-from collections import deque
-
-import cv2
-import numpy as np
-import mediapipe as mp
-import tensorflow as tf
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-
-from utils import (
-    ACTIONS,
-    SEQUENCE_LENGTH,
-    MODEL_PATH,
-    mediapipe_detection,
-    extract_keypoints,
-)
-```
-
-**Path Aliases:**
-- None (direct imports only)
+**TypeScript:**
+1. React/framework imports (`import { useState, useCallback } from 'react'`)
+2. Type imports (`import type { Node, Edge } from '@xyflow/react'`)
+3. Library imports (`import { ReactFlow, Controls } from '@xyflow/react'`)
+4. Local imports (`import './App.css'`)
 
 ## Error Handling
 
 **Patterns:**
-- Try/except at boundary level (WebSocket handlers, data loading loops)
-- Broad `except Exception` in production paths with logging
-- Graceful degradation: log warning, skip invalid data, continue processing
-- Context manager (`with`) for MediaPipe Holistic and webcam resources
+- Log errors with context before handling (`logger.error(f"Failed to load model: {e}")`)
+- Graceful degradation where possible (server starts even without model)
+- Runtime assertions for critical contracts (`assert result.shape == (1662,)`)
+- Specific exception types where known (`except (binascii.Error, ValueError)`, `except (ValueError, OSError, EOFError)`)
 
 **Error Types:**
-- Throw on missing files, invalid configuration
-- Log and skip for per-frame/per-sequence errors during training data loading
-- Send JSON error response to WebSocket clients on frame decode failure
-- Exit with code 1 for critical test failures
+- Assertions for invariant violations (keypoint shape)
+- Specific exceptions for expected failures (file not found, decode errors)
+- Broad `except Exception` only at top-level handlers (WebSocket frame processing)
+- SystemExit for CLI validation failures
 
 ## Logging
 
 **Framework:**
-- Python `logging` module for production scripts (`ml/ws_server.py`, `ml/train_model.py`)
-- `print()` for simple utility scripts (`ml/collect_data.py`, `ml/verify_data.py`)
-
-**Setup Pattern:**
-```python
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger(__name__)
-```
+- Python `logging` module (`ml/ws_server.py`, `ml/train_model.py`)
+- Instance: `logger = logging.getLogger(__name__)`
+- Levels: INFO, WARNING, ERROR
 
 **Patterns:**
-- `logger.info()` for progress messages and state transitions
-- `logger.warning()` for non-critical issues (skipped sequences, low confidence)
-- `logger.error()` for failures that impact functionality
-- Emoji in print output for visual scripts (`"✓ Sequence recorded"`)
+- Format: `%(asctime)s [%(levelname)s] %(message)s`
+- Log at service boundaries (model loading, client connect/disconnect)
+- Log performance thresholds (`if inference_ms > 200: logger.warning(...)`)
+- No `console.log` in Python code
 
 ## Comments
 
 **When to Comment:**
-- Critical contracts: `# CRITICAL: do not change keypoint order`
-- Section organization with dividers
-- Non-obvious logic or magic numbers
-- Keypoint index calculations with breakdown
+- Critical contracts: Document invariants that MUST NOT change (`extract_keypoints` order)
+- Sectional headers: Visual separators for code organization (`# ========================`)
+- Business logic: Explain why specific thresholds or values chosen
+- Non-obvious algorithms: Keypoint vector breakdown (132 + 1404 + 63 + 63 = 1662)
 
-**Module Docstrings (Required):**
+**Docstrings:**
+- Required for all modules (triple-quoted, at top of file)
+- Required for all public functions (Google-style with Args, Returns, Raises)
+- Classes: Purpose and usage in class docstring, method-level for complex methods
+- Critical contracts prominently documented:
+  ```python
+  """
+  CRITICAL CONTRACT:
+  - extract_keypoints returns shape (1662,)
+  - Keypoint order: [pose, face, lh, rh] -- DO NOT CHANGE
+  """
+  ```
+
+**Section Headers:**
 ```python
-"""
-SenseAI — Shared Utility Functions
-====================================
-Shared constants and functions used by all ML pipeline scripts.
-
-CRITICAL CONTRACT:
-- extract_keypoints returns shape (1662,)
-- Keypoint order: [pose, face, lh, rh] — DO NOT CHANGE
-"""
-```
-
-**Function Docstrings (Required):**
-- Google/NumPy style with Args, Returns sections
-- All public functions must have docstrings
-
-**Section Dividers:**
-```python
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 # ========================
-# KEYPOINT EXTRACTION
+# SHARED CONSTANTS
 # ========================
 ```
 
 **TODO Comments:**
-- No specific format enforced
-- Minimal TODOs in current codebase
+- Format: `# TODO: description`
+- Tracked in `docs/TODO.md` for Ralph loop consumption
 
 ## Function Design
 
 **Size:**
-- Functions generally under 50 lines
-- Longer functions for main training loop and WebSocket handler (acceptable for pipeline scripts)
+- Keep functions focused on single responsibility
+- `extract_keypoints()`: ~40 lines (extraction + assertion)
+- `sign_detection()` WebSocket handler: ~116 lines (complex but single flow)
 
 **Parameters:**
-- Explicit type hints on key parameters (`data_path: str`, `output_dir: str`)
-- argparse for CLI configuration (`ml/train_model.py`)
-- Module constants for runtime configuration
+- Type hints on all parameters and return types
+- Defaults for optional parameters (`window_size: int = 8`)
+- CLI arguments via argparse with sensible defaults
+- Environment variable fallbacks via `os.environ.get()`
 
 **Return Values:**
-- Explicit returns
-- Tuple returns for multi-value functions (`load_data` returns `X, y, skipped`)
-- numpy arrays for data processing functions
+- Explicit return types in type hints
+- None for error cases in frame decoding
+- Dict for structured results (StabilityFilter.update())
+- NumPy arrays for numerical data
 
 ## Module Design
 
 **Exports:**
-- Explicit imports from `utils.py` using `from utils import ...`
-- No `__all__` definitions
-- No barrel files or index modules
+- `ml/utils.py` is the shared export hub (constants, functions, classes)
+- All ML scripts import from `utils` for shared values
+- No barrel files or index.ts pattern in Python code
 
-**Main Block:**
-```python
-def main():
-    # Implementation
-    pass
-
-if __name__ == "__main__":
-    main()
-```
-All executable scripts follow this pattern.
-
-**Data Structures:**
-- `collections.deque(maxlen=N)` for fixed-size sliding window buffers
-- `np.ndarray` for all keypoint and prediction data
-- `dict` comprehensions for prediction result formatting
+**Single Source of Truth:**
+- Constants defined once in `ml/utils.py`, imported everywhere
+- No duplication of ACTIONS, SEQUENCE_LENGTH, MODEL_PATH across files
+- Environment variable config centralized in `ml/utils.py`
 
 ---
 

@@ -4,138 +4,135 @@
 
 ## Tech Debt
 
-**Bare exception handling in WebSocket server:**
-- Issue: `except Exception:` catches all errors without distinguishing types in frame decoding
-- Files: `ml/ws_server.py` (line 127)
-- Why: Quick hackathon implementation
-- Impact: Cannot diagnose root cause of frame decode failures; generic error messages to clients
-- Fix approach: Use specific exception types (binascii.Error, cv2.error, ValueError)
+**Tightly Coupled Dependency Versions:**
+- Issue: MediaPipe 0.10.21 -> numpy<2 -> TensorFlow 2.16.2 version chain
+- Files: `ml/requirements.txt`
+- Why: MediaPipe 0.10.22+ removed `mp.solutions.holistic` legacy API
+- Impact: Cannot upgrade any package in the chain independently; Python 3.13+ may break MediaPipe 0.10.21
+- Fix approach: Plan migration to MediaPipe Python SDK (new API) when ready, which removes the version chain constraint
 
-**Duplicate constants across files:**
-- Issue: ACTIONS, SEQUENCE_LENGTH, NUM_SEQUENCES defined in 3 separate files
-- Files: `ml/utils.py` (lines 23-31), `ml/train_model.py` (lines 48-54), `ml/verify_data.py` (lines 22-26)
-- Why: `verify_data.py` intentionally standalone; `train_model.py` duplicates for clarity
-- Impact: If ACTIONS changes, must update 3 files; risk of inconsistent state
-- Fix approach: Import from `ml/utils.py` in all files; remove standalone requirement from verify_data.py
+**Manual Test Files Mixed with Source:**
+- Issue: 4 manual test scripts (`test_realtime.py`, `test_setup.py`, `test_ws_client.py`, `test_ws_health.py`) live in `ml/` root instead of `ml/tests/`
+- Files: `ml/test_realtime.py`, `ml/test_setup.py`, `ml/test_ws_client.py`, `ml/test_ws_health.py`
+- Why: Created as standalone scripts before test infrastructure existed
+- Impact: Inconsistent test organization; pytest may pick them up unexpectedly
+- Fix approach: Move to `ml/tests/manual/` or rename to not match `test_*.py` pattern
 
-**Hardcoded configuration in multiple files:**
-- Issue: HOST, PORT, CONFIDENCE_THRESHOLD, STABILITY_WINDOW hardcoded in 3+ files
-- Files: `ml/ws_server.py` (lines 37-40), `ml/test_realtime.py` (lines 30-31), `ml/test_ws_client.py` (line 25), `ml/test_ws_health.py` (line 14)
-- Why: Hackathon simplicity
-- Impact: Cannot deploy to different ports without code changes; tuning requires editing source
-- Fix approach: Centralize in `ml/utils.py` with environment variable overrides
-
-**Relative MODEL_PATH depends on working directory:**
-- Issue: `MODEL_PATH = os.path.join('models', 'action_model.h5')` is relative to cwd
-- Files: `ml/utils.py` (line 31)
-- Why: Simple default for single-directory usage
-- Impact: Different behavior depending on where script is executed from; confusing errors
-- Fix approach: Use `os.path.dirname(os.path.abspath(__file__))` for absolute path resolution
+**Vendored Code Without Version Tracking:**
+- Issue: `vendor/ralph-loop/` has no record of which commit/version was vendored
+- Files: `vendor/ralph-loop/`
+- Why: Copied manually without version pinning
+- Impact: Can't determine if upstream fixes are available
+- Fix approach: Add `vendor/VENDORED.md` documenting source, version, and date
 
 ## Known Bugs
 
-**No known bugs in current codebase.**
-- All pipeline phases (1-10) have been implemented and tested
-- WebSocket server functional for single-client scenarios
+No confirmed bugs found in current codebase. Previous bugs (race condition, missing error handling, constant duplication) have been resolved per `docs/TODO.md` task completion history.
 
 ## Security Considerations
 
-**CORS wildcard with credentials enabled:**
-- Risk: `allow_origins=["*"]` with `allow_credentials=True` allows any website to make authenticated requests
-- File: `ml/ws_server.py` (lines 49-55)
-- Current mitigation: Localhost-only development (not exposed to internet)
-- Recommendations: Restrict CORS to frontend domain; set `allow_credentials=False` with wildcard origins
+**Overly Permissive CORS Configuration:**
+- Risk: Any website can connect to the WebSocket server and send/receive data
+- Files: `ml/ws_server.py` (lines 73-79) - `allow_origins=["*"]`
+- Current mitigation: None (development-mode configuration)
+- Recommendations: Restrict to specific allowed origins in production deployment
 
-**No rate limiting on WebSocket connections:**
-- Risk: Client can send unlimited frames, exhausting server resources (DoS)
-- File: `ml/ws_server.py` (lines 91-202)
-- Current mitigation: None (localhost development only)
-- Recommendations: Add per-client frame rate limiting (e.g., max 60 frames per 10 seconds)
+**Unvalidated Environment Variable Conversions:**
+- Risk: Invalid env var values (e.g., `SENSEAI_PORT=abc`) crash server at import time with unhelpful error
+- Files: `ml/utils.py` (lines 38-41)
+- Current mitigation: Sensible defaults if env vars not set
+- Recommendations: Wrap in try/except with validation and fallback to defaults
 
-**No payload size limit on base64 decode:**
-- Risk: Client sends oversized base64 string causing memory exhaustion
-- File: `ml/ws_server.py` (lines 85-86)
-- Current mitigation: None
-- Recommendations: Validate payload size before decoding (e.g., max 5 MB)
-
-**Unsafe data URL prefix parsing:**
-- Risk: Malformed data URL (e.g., `"data:image/jpeg;base64"` without comma) causes IndexError or processes garbage
-- File: `ml/ws_server.py` (lines 82-83)
-- Current mitigation: None
-- Recommendations: Validate comma separator exists before splitting
+**Docker Image Uses node:20-slim for Python App:**
+- Risk: Unnecessary attack surface from Node.js in a primarily Python ML application
+- Files: `Dockerfile` (line 1)
+- Current mitigation: Non-root user (`ralph`) for container execution
+- Recommendations: Use `python:3.12-slim` as base image if Node.js not needed for Ralph CLI
 
 ## Performance Bottlenecks
 
-**No latency logging in inference path:**
-- Problem: No timing around `model.predict()` calls in WebSocket server
-- File: `ml/ws_server.py` (line 158)
-- Measurement: Not tracked (no instrumentation)
-- Cause: No performance monitoring implemented
-- Improvement path: Add timing around MediaPipe detection and LSTM inference; log slow predictions
+**Per-Connection MediaPipe Initialization:**
+- Problem: Each WebSocket connection creates its own MediaPipe Holistic instance (~100-500MB)
+- Files: `ml/ws_server.py` (line 137)
+- Measurement: Not profiled, but MediaPipe instances are heavyweight
+- Cause: Per-client state isolation pattern
+- Improvement path: Consider connection pooling or shared detection service for high concurrency
+
+**Global Model Without Concurrency Control:**
+- Problem: Single TensorFlow model shared across concurrent WebSocket connections
+- Files: `ml/ws_server.py` (lines 49, 203)
+- Measurement: Inference tracked in `deque(maxlen=100)`, warning at >200ms
+- Cause: `model.predict()` called directly from async handler without queue
+- Improvement path: Request queue or batching for many concurrent clients
+
+**No Frame Batching:**
+- Problem: Each frame triggers immediate inference (no amortization)
+- Files: `ml/ws_server.py` (lines 200-210)
+- Cause: Single-frame-at-a-time processing
+- Improvement path: Batch predictions across clients for GPU efficiency (if GPU added)
 
 ## Fragile Areas
 
-**Keypoint extraction contract (`ml/utils.py`):**
-- Why fragile: All downstream scripts depend on exact (1662,) shape and [pose, face, lh, rh] order
-- Common failures: Changing keypoint order silently breaks all inference
-- Safe modification: Add runtime assertion that result.shape == (1662,)
-- Test coverage: Verified by `ml/test_setup.py` (shape check only)
+**MediaPipe Version Constraint:**
+- Why fragile: Pinned to 0.10.21 (last version with legacy API); any accidental upgrade breaks everything
+- Common failures: `AttributeError: module 'mediapipe.solutions' has no attribute 'holistic'`
+- Safe modification: Always test with `ml/conftest.py` mock; never upgrade MediaPipe without migration plan
+- Test coverage: Good - conftest patches handle version differences; `test_extract_keypoints.py` validates contract
 
-**WebSocket server startup model loading:**
-- Why fragile: No error handling if MODEL_PATH doesn't exist; server crashes with cryptic TensorFlow error
-- File: `ml/ws_server.py` (lines 62-66)
-- Common failures: Missing model file, wrong working directory
-- Safe modification: Add os.path.isfile() check and clear error message before tf.keras.models.load_model()
-- Test coverage: `ml/test_ws_health.py` checks /health endpoint but only after successful startup
+**Keypoint Vector Order and Size:**
+- Why fragile: LSTM model trained on exact 1662-dim vector in [pose, face, lh, rh] order
+- Common failures: Changing landmark count or order produces garbage predictions
+- Safe modification: Never change `extract_keypoints()` without retraining model
+- Test coverage: Good - runtime assertion + dedicated tests in `test_extract_keypoints.py`
 
 ## Scaling Limits
 
-**Single-connection WebSocket handling:**
-- Current capacity: Designed and tested for single client at a time
-- Limit: Multiple concurrent clients create per-connection MediaPipe instances (CPU-intensive)
-- Symptoms at limit: Increased inference latency, potential memory pressure
-- Scaling path: Connection pooling, model optimization, or GPU inference
+**WebSocket Server (Local):**
+- Current capacity: Designed for demo/development (single server, no load balancer)
+- Limit: Memory-bound by per-connection MediaPipe instances
+- Symptoms at limit: High memory usage, slow inference (>200ms threshold)
+- Scaling path: Add connection limits, pooled resources, or scale horizontally behind load balancer
 
 ## Dependencies at Risk
 
-**No dependencies at immediate risk.**
-- All packages pinned to specific versions in `ml/requirements.txt`
-- TensorFlow 2.20.0, MediaPipe 0.10.32, FastAPI 0.128.6 are current stable versions
-- Note: `@app.on_event("startup")` in FastAPI is deprecated in favor of lifespan handlers
+**mediapipe 0.10.21:**
+- Risk: Legacy API removed in 0.10.22+; version may become incompatible with future Python versions
+- Impact: Core landmark detection breaks entirely
+- Migration plan: Move to MediaPipe Python SDK (new API) when project stabilizes; will require rewriting detection code in `ml/utils.py`
 
 ## Missing Critical Features
 
-**No WebSocket authentication:**
-- Problem: Any client can connect and send frames without authentication
-- Current workaround: Localhost-only development
-- Blocks: Production deployment to public internet
-- Implementation complexity: Low (add API key or JWT validation on WebSocket connect)
+**No .env.example File:**
+- Problem: New developers don't know which environment variables are needed
+- Files: Repository root (`.env` exists but is gitignored)
+- Current workaround: Must read `docker-compose.yml` and `ml/utils.py` to discover required variables
+- Implementation complexity: Low (create single file)
 
-**No protocol specification document:**
-- Problem: WebSocket message format only documented in code comments and test clients
-- Current workaround: Frontend team reverse-engineers from `ml/test_ws_client.py`
-- Blocks: Efficient frontend integration
-- Implementation complexity: Low (document JSON message schemas)
+**No Production Deployment Configuration:**
+- Problem: No example configs for production deployment (Kubernetes, systemd, etc.)
+- Current workaround: Run locally with Uvicorn or Docker Compose
+- Blocks: Production deployment requires creating config from scratch
+- Implementation complexity: Medium (need to define deployment target first)
 
 ## Test Coverage Gaps
 
-**No unit tests for core functions:**
-- What's not tested: `extract_keypoints()`, `decode_frame()`, `mediapipe_detection()` in isolation
-- Risk: Refactoring could silently break core logic without detection
+**No Concurrent Client Tests:**
+- What's not tested: Multiple simultaneous WebSocket connections
+- Risk: Concurrency bugs with shared model or per-connection state
 - Priority: Medium
-- Difficulty to test: Low (functions are pure or easily mockable)
+- Difficulty to test: Need asyncio test harness simulating 10+ clients
 
-**No negative/edge case testing:**
-- What's not tested: Invalid input formats, corrupted data, oversized payloads, concurrent clients
-- Risk: Server crashes or produces incorrect results on unexpected input
-- Priority: Medium (especially for production deployment)
-- Difficulty to test: Medium (requires mocking and test fixtures)
+**No End-to-End Pipeline Test:**
+- What's not tested: Full data collection -> training -> inference pipeline
+- Risk: Breaking changes between pipeline stages undetected
+- Priority: Medium
+- Difficulty to test: Requires minimal test dataset and automated training
 
-**No automated WebSocket integration tests:**
-- What's not tested: End-to-end WebSocket flow without manual intervention
-- Risk: Regressions in server protocol undetected until manual testing
-- Priority: Low (hackathon context)
-- Difficulty to test: Medium (requires programmatic server startup and client)
+**No Data Quality Regression Tests:**
+- What's not tested: Hand detection quality after code changes
+- Risk: Subtle detection degradation goes unnoticed
+- Priority: Low
+- Difficulty to test: Need reference dataset with known detection rates
 
 ---
 

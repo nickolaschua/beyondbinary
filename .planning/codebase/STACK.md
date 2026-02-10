@@ -5,79 +5,99 @@
 ## Languages
 
 **Primary:**
-- Python 3.12 - All application code (`ml/*.py`)
+- Python 3.12 - All ML pipeline code (`ml/`)
+- TypeScript ~5.9.3 - Frontend flowchart visualization (`vendor/ralph-loop/flowchart/`)
 
 **Secondary:**
-- Jupyter Notebooks - Training and exploration (`ml/training_notebook.ipynb`, `notebook1_nick.ipynb`, `notebook2_somyansh.ipynb`)
+- Bash/Shell - Automation & orchestration (`scripts/ralph/`, `Makefile`)
+- JavaScript/JSX (ES2022) - React components
 
 ## Runtime
 
 **Environment:**
-- Python 3.12 (previously constrained to 3.9-3.11 for MediaPipe Windows wheels; all deps now updated)
-- Google Colab T4 GPU for model training (`ml/training_notebook.ipynb`)
-- No browser runtime (ML pipeline only)
+- Python 3.12 (NOT compatible with 3.13 due to MediaPipe constraint)
+- Node.js 20+ (via `node:20-slim` Docker image)
+- Docker for containerized Ralph loop execution
+- Uvicorn 0.40.0 ASGI server for FastAPI
 
 **Package Manager:**
-- pip (standard Python)
-- Lockfile: None (no poetry.lock, Pipfile.lock)
-- Dependencies pinned in `ml/requirements.txt`
+- pip - Python packages (`ml/requirements.txt`, all versions pinned)
+- npm - Node.js packages (`vendor/ralph-loop/flowchart/package-lock.json`)
 
 ## Frameworks
 
 **Core:**
-- TensorFlow 2.20.0 - LSTM model training and inference (`ml/train_model.py`, `ml/ws_server.py`)
-- FastAPI 0.128.6 - WebSocket server and HTTP endpoints (`ml/ws_server.py`)
-- MediaPipe 0.10.32 - Real-time pose, hand, and face landmark detection (`ml/utils.py`, `ml/collect_data.py`)
+- FastAPI 0.128.6 - REST API & WebSocket server (`ml/ws_server.py`)
+- React 19.2.0 - UI framework for flowchart visualization (`vendor/ralph-loop/flowchart/`)
+- TensorFlow 2.16.2 - Deep learning / LSTM inference (`ml/train_model.py`, `ml/ws_server.py`)
+- MediaPipe 0.10.21 - Computer vision pose/hand/face detection (`ml/utils.py`)
 
 **Testing:**
-- Manual integration tests via executable Python scripts (`ml/test_setup.py`, `ml/test_realtime.py`, `ml/test_ws_client.py`, `ml/test_ws_health.py`)
-- No formal test framework (no pytest, unittest)
+- pytest - Python test suite (`ml/tests/`)
 
 **Build/Dev:**
-- Uvicorn 0.40.0 - ASGI server (`ml/ws_server.py`)
-- Google Colab - GPU-accelerated training environment (`ml/training_notebook.ipynb`)
+- Vite 7.2.4 - Frontend bundler (`vendor/ralph-loop/flowchart/vite.config.ts`)
+- TypeScript ~5.9.3 - Type checking (`vendor/ralph-loop/flowchart/tsconfig.app.json`)
+- ESLint 9.39.1 - Linting (`vendor/ralph-loop/flowchart/eslint.config.js`)
+- Make - Build automation (`Makefile`)
 
 ## Key Dependencies
 
-**Critical:**
-- TensorFlow 2.20.0 - LSTM model architecture, training, and inference (`ml/train_model.py`, `ml/ws_server.py`)
-- MediaPipe 0.10.32 - Holistic pose/hand/face landmark detection (`ml/utils.py`)
-- OpenCV 4.13.0.92 - Webcam capture, frame encoding/decoding, visualization (`ml/collect_data.py`, `ml/ws_server.py`, `ml/test_realtime.py`)
-- NumPy 2.4.2 - Array operations, keypoint manipulation, data I/O (`ml/utils.py`, `ml/train_model.py`)
-- scikit-learn 1.8.0 - Train/test splitting, confusion matrix, classification report (`ml/train_model.py`)
+**Critical (ML Pipeline):**
+- mediapipe 0.10.21 - Pose/face/hand landmark detection (PINNED: last version with `mp.solutions.holistic`) (`ml/requirements.txt`)
+- tensorflow 2.16.2 - LSTM model training & inference (PINNED: numpy<2 compatible) (`ml/requirements.txt`)
+- numpy 1.26.4 - Numerical computing (PINNED: constrained by MediaPipe) (`ml/requirements.txt`)
+- opencv-python 4.11.0.86 - Video capture & image I/O (`ml/requirements.txt`)
+- scikit-learn 1.6.1 - Train/test split, metrics (`ml/train_model.py`)
+
+**Critical (Frontend):**
+- @xyflow/react 12.10.0 - Node/graph flowchart visualization (`vendor/ralph-loop/flowchart/package.json`)
 
 **Infrastructure:**
-- FastAPI 0.128.6 - HTTP + WebSocket server (`ml/ws_server.py`)
-- Uvicorn 0.40.0 - ASGI server runtime (`ml/ws_server.py`)
-- websockets 16.0 - WebSocket client for testing (`ml/test_ws_client.py`)
-- python-multipart 0.0.22 - Form data handling for FastAPI (`ml/ws_server.py`)
-- Matplotlib 3.10.8 - Training visualization and confusion matrix plots (`ml/train_model.py`)
+- uvicorn 0.40.0 - ASGI server (`ml/requirements.txt`)
+- websockets 16.0 - WebSocket client for testing (`ml/requirements.txt`)
+- python-multipart 0.0.22 - Form data parsing (`ml/requirements.txt`)
+- matplotlib 3.10.8 - Training visualization (`ml/requirements.txt`)
 
 ## Configuration
 
 **Environment:**
-- No environment variables required (all configuration hardcoded)
-- No .env files detected
-- Configuration via module-level constants in `ml/utils.py`, `ml/ws_server.py`
-- CLI arguments supported in `ml/train_model.py` (--epochs, --batch_size, --data_path, --output_dir)
+- `.env` file (gitignored) for `ANTHROPIC_API_KEY`
+- Runtime config via environment variables with defaults in `ml/utils.py`:
+  - `SENSEAI_HOST` (default: "0.0.0.0")
+  - `SENSEAI_PORT` (default: 8001)
+  - `SENSEAI_CONFIDENCE_THRESHOLD` (default: 0.7)
+  - `SENSEAI_STABILITY_WINDOW` (default: 8)
 
 **Build:**
-- `ml/requirements.txt` - Pinned dependency versions (Python 3.12 compatible)
-- `.planning/config.json` - Project planning mode configuration
+- `vendor/ralph-loop/flowchart/vite.config.ts` - Vite config (base path: `/ralph/`)
+- `vendor/ralph-loop/flowchart/tsconfig.app.json` - TypeScript strict mode
+- `vendor/ralph-loop/flowchart/eslint.config.js` - ESLint with React/TS plugins
+- `Makefile` - Docker build targets (`ralph-once`, `ralph-afk`)
 
 ## Platform Requirements
 
 **Development:**
-- Windows (primary), macOS/Linux compatible
-- Webcam required for data collection and real-time testing
-- Python 3.12 with pip
-- No Docker or external services needed
+- Windows/macOS/Linux with Python 3.12
+- Webcam required for data collection (`ml/collect_data.py`)
+- No GPU required (CPU inference)
 
 **Production:**
-- FastAPI + Uvicorn on port 8001
-- Trained model file: `models/action_model.h5` (~50-100 MB)
-- CPU-only inference (no GPU required for serving)
-- Google Colab T4 GPU for model training (optional, faster than local CPU)
+- Docker container (`Dockerfile` base: `node:20-slim`)
+- Non-root user `ralph` for container execution
+- Uvicorn for WebSocket server: `uvicorn ws_server:app --host 0.0.0.0 --port 8001`
+
+## Critical Version Constraints
+
+**Dependency chain (DO NOT CHANGE independently):**
+```
+MediaPipe 0.10.21 (last version with mp.solutions.holistic legacy API)
+  -> requires numpy<2
+    -> TensorFlow 2.16.2 (numpy<2 compatible)
+      -> NumPy 1.26.4
+```
+
+Breaking any link in this chain will cause import errors or runtime failures.
 
 ---
 

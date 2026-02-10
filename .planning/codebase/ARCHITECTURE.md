@@ -4,182 +4,164 @@
 
 ## Pattern Overview
 
-**Overall:** ML Pipeline with WebSocket Serving Layer
+**Overall:** Monolithic ML Pipeline + Autonomous AI Agent Orchestration (Hybrid)
 
 **Key Characteristics:**
-- Sequential processing pipeline (collect -> verify -> train -> serve)
-- Real-time streaming inference via WebSocket
-- Shared utility module enforcing data contracts (`ml/utils.py`)
-- Per-connection state management in WebSocket server
-- Stateful sliding window buffers for temporal prediction
+- Single-purpose ML pipeline for ASL sign detection (data collection -> training -> inference)
+- On-device inference (no cloud ML services)
+- Real-time WebSocket server for browser-based sign detection
+- Autonomous Ralph loop for unattended development task completion
+- All ML modules share constants/utilities via single hub (`ml/utils.py`)
 
 ## Layers
 
-**Utility & Shared Layer:**
-- Purpose: Enforce consistency across all pipeline scripts
-- Contains: Constants (ACTIONS, SEQUENCE_LENGTH), MediaPipe detection wrapper, keypoint extraction
-- Location: `ml/utils.py`
-- Depends on: mediapipe, opencv, numpy
-- Used by: All other layers
-- Critical contract: `extract_keypoints()` returns shape (1662,) with order [pose(132), face(1404), lh(63), rh(63)]
+**Data Acquisition Layer:**
+- Purpose: Capture webcam video, extract pose/hand/face landmarks, persist as structured data
+- Contains: Data collection scripts, verification tools
+- Key files: `ml/collect_data.py`, `ml/verify_data.py`
+- Depends on: Shared utilities layer, MediaPipe, OpenCV, NumPy
+- Used by: Training layer (consumes saved `.npy` files)
 
-**Data Collection Layer:**
-- Purpose: Record ASL sign language data from webcam
-- Contains: Webcam capture, MediaPipe processing, .npy serialization
-- Location: `ml/collect_data.py`
-- Depends on: Utility layer, OpenCV, MediaPipe
-- Used by: Training layer (produces MP_Data/)
+**Shared Utilities Layer:**
+- Purpose: Central hub of constants, functions, and abstractions used by all ML scripts
+- Contains: Constants (ACTIONS, SEQUENCE_LENGTH), detection functions, keypoint extraction, StabilityFilter
+- Key files: `ml/utils.py`
+- Depends on: MediaPipe, TensorFlow, NumPy, OpenCV
+- Used by: All other ML layers
 
-**Data Verification Layer:**
-- Purpose: Quality gate before model training
-- Contains: Sequence count validation, keypoint shape checks, hand detection rate analysis
-- Location: `ml/verify_data.py`
-- Depends on: numpy (standalone by design)
-- Used by: Human operator (go/no-go for training)
+**Training Layer:**
+- Purpose: Load keypoint sequences, build LSTM classifier, train, evaluate, save model
+- Contains: Data loading, model architecture definition, training loop, evaluation metrics
+- Key files: `ml/train_model.py`
+- Depends on: Shared utilities layer, TensorFlow, scikit-learn, matplotlib
+- Used by: Inference layer (consumes trained model)
 
-**Model Training Layer:**
-- Purpose: Train 3-layer LSTM classifier on keypoint sequences
-- Contains: Model architecture, training loop, evaluation, visualization
-- Location: `ml/train_model.py`, `ml/training_notebook.ipynb`
-- Depends on: Utility layer, TensorFlow/Keras, scikit-learn, matplotlib
-- Used by: Inference and serving layers (produces action_model.h5)
+**Inference Layer (WebSocket Server):**
+- Purpose: Real-time frame-by-frame ASL sign prediction with <200ms latency target
+- Contains: FastAPI app, WebSocket endpoint, frame decoding, per-connection state
+- Key files: `ml/ws_server.py`
+- Depends on: Shared utilities layer, FastAPI, TensorFlow, MediaPipe, OpenCV
+- Used by: Browser clients via WebSocket
 
-**Real-Time Inference Layer:**
-- Purpose: Standalone webcam sign detection for verification
-- Contains: Sliding window buffer, confidence thresholding, stability filtering, visualization
-- Location: `ml/test_realtime.py`
-- Depends on: Utility layer, TensorFlow, OpenCV
-- Used by: Human operator (verify model before serving)
+**Testing Layer:**
+- Purpose: Automated test suite enabling CI/CD without GPU/webcam/MediaPipe runtime
+- Contains: pytest fixtures, mock MediaPipe results, unit and integration tests
+- Key files: `ml/conftest.py`, `ml/tests/conftest.py`, `ml/tests/test_*.py` (21 files)
+- Depends on: Shared utilities layer (after mocking), pytest
+- Used by: Ralph verification gate, manual development
 
-**WebSocket Serving Layer:**
-- Purpose: Serve sign predictions via WebSocket to frontend
-- Contains: FastAPI server, per-connection state, frame decoding, LSTM inference
-- Location: `ml/ws_server.py`
-- Depends on: Utility layer, FastAPI, TensorFlow, MediaPipe, OpenCV
-- Used by: Frontend (Next.js browser client)
-
-**Testing/Verification Layer:**
-- Purpose: Validate environment, server health, end-to-end integration
-- Contains: Import checks, webcam tests, health checks, WebSocket client tests
-- Location: `ml/test_setup.py`, `ml/test_ws_client.py`, `ml/test_ws_health.py`
-- Depends on: Various (per test script)
-- Used by: Human operator and CI/CD (future)
+**Orchestration Layer (Ralph Loop):**
+- Purpose: Autonomous AI agent loop that iteratively completes development tasks
+- Contains: Bash loop script, Claude prompt templates, Docker configuration
+- Key files: `scripts/ralph/ralph.sh`, `scripts/ralph/CLAUDE*.md`, `Dockerfile`, `docker-compose.yml`
+- Depends on: Claude Code CLI, pytest (verification gate)
+- Used by: Developers via `make ralph-once` or `make ralph-afk`
 
 ## Data Flow
 
-**Data Collection Flow:**
+**ML Pipeline (Collect -> Train -> Serve):**
 
-1. Webcam captures BGR frame (OpenCV VideoCapture)
-2. MediaPipe Holistic detects pose, face, hands (`ml/utils.py` mediapipe_detection)
-3. Keypoints extracted and flattened to (1662,) array (`ml/utils.py` extract_keypoints)
-4. Saved as .npy file to `MP_Data/{action}/{sequence}/{frame}.npy`
-5. Repeated for 10 actions x 30 sequences x 30 frames = 9,000 files
+1. Data Collection: Webcam -> MediaPipe Holistic -> extract_keypoints() -> 1662-dim vector -> `MP_Data/{action}/{seq}/{frame}.npy`
+2. Data Verification: Read `.npy` files -> validate shape (1662,) -> check hand detection rates
+3. Training: Load `.npy` sequences -> reshape to (N, 30, 1662) -> train 3-layer LSTM -> save `action_model.h5`
+4. Inference: base64 JPEG frame -> decode -> MediaPipe -> extract_keypoints -> 30-frame buffer -> LSTM predict -> stability filter -> JSON response
 
-**Training Flow:**
+**WebSocket Frame Processing Pipeline:**
 
-1. Load all .npy sequences from MP_Data/ (`ml/train_model.py` load_data)
-2. Create X: (N, 30, 1662) and y: (N, 10) one-hot encoded
-3. Stratified train/test split (90/10) (`ml/train_model.py`)
-4. Build 3-layer LSTM: 64->128->64 units with BatchNorm+Dropout
-5. Train with EarlyStopping (patience=30) and ModelCheckpoint
-6. Evaluate on held-out test set, generate confusion matrix
-7. Save model to `models/action_model.h5`
-
-**WebSocket Inference Flow:**
-
-1. Frontend sends base64 JPEG frame via WebSocket
-2. Server decodes frame (`ml/ws_server.py` decode_frame)
-3. MediaPipe Holistic detection on frame
-4. Keypoints extracted to (1662,) array
-5. Appended to 30-frame sliding window buffer (deque)
-6. If buffer not full: return buffering status
-7. If buffer full: reshape to (1, 30, 1662), run LSTM prediction
-8. Apply confidence threshold (0.7) and stability filter (8-frame consensus)
-9. Return JSON prediction with sign, confidence, stability flags
+1. Receive JSON `{"type": "frame", "frame": "base64..."}`
+2. Rate limit check (max 60 frames / 10 seconds per client)
+3. `decode_frame()`: base64 -> JPEG decode -> OpenCV BGR frame
+4. `mediapipe_detection()`: BGR -> RGB -> MediaPipe Holistic -> landmarks
+5. `extract_keypoints()`: landmarks -> 1662-dim flat array
+6. Buffer in 30-frame sliding window (`deque(maxlen=30)`)
+7. When buffer full: `model.predict()` on (1, 30, 1662) sequence
+8. `StabilityFilter.update()`: check N consecutive identical predictions above threshold
+9. Return JSON with sign, confidence, stability status
 
 **State Management:**
-- File-based: Training data in MP_Data/, model in models/
-- Per-connection: WebSocket server maintains per-client buffers, prediction history, MediaPipe instance
-- No database, no persistent in-memory state across connections
+- File-based: Training data in `ml/MP_Data/`, model in `ml/models/`
+- Per-connection: Each WebSocket client has own MediaPipe instance, keypoint buffer, stability filter
+- Global: Single TensorFlow model loaded at server startup (shared across connections)
 
 ## Key Abstractions
 
-**Shared Utility Module (`ml/utils.py`):**
-- Purpose: Single source of truth for constants and detection functions
-- Pattern: Module-level constants + pure functions
-- Critical: Changing keypoint order breaks all downstream scripts
+**StabilityFilter (`ml/utils.py`):**
+- Purpose: Temporal smoothing to prevent flickering predictions
+- Pattern: Sliding window state machine (deque-based)
+- Requires N consecutive identical predictions above confidence threshold
+- Returns: `{is_stable, is_new_sign, sign}`
 
-**Sliding Window Buffer:**
-- Purpose: Temporal feature extraction (30 consecutive frames)
-- Implementation: `collections.deque(maxlen=SEQUENCE_LENGTH)`
-- Used in: `ml/test_realtime.py`, `ml/ws_server.py`
-- Pattern: FIFO auto-discard, O(1) append
+**extract_keypoints (`ml/utils.py`):**
+- Purpose: Convert MediaPipe landmarks to fixed-size vector
+- Pattern: Critical contract function (MUST return shape 1662)
+- Order: [pose(132), face(1404), lh(63), rh(63)] - IMMUTABLE
+- Runtime assertion enforced
 
-**Stability Filter:**
-- Purpose: Reduce false positives by requiring N consecutive identical predictions
-- Implementation: `deque(maxlen=STABILITY_WINDOW)` with set-equality check
-- Used in: `ml/test_realtime.py`, `ml/ws_server.py`
-- Config: CONFIDENCE_THRESHOLD=0.7, STABILITY_WINDOW=8
-
-**Per-Connection State:**
-- Purpose: Isolate WebSocket clients from each other
-- Implementation: Function-scoped variables in WebSocket handler
-- Includes: MediaPipe Holistic instance, keypoint buffer, prediction history, current_sign
-- Lifecycle: Created on connect, destroyed on disconnect
+**Lifespan Context Manager (`ml/ws_server.py`):**
+- Purpose: Load TensorFlow model once at startup, not per-request
+- Pattern: FastAPI lifespan context manager
+- Graceful degradation: server starts even if model missing
 
 ## Entry Points
 
 **Data Collection:**
 - Location: `ml/collect_data.py`
-- Triggers: `python ml/collect_data.py`
-- Responsibilities: Record 10 ASL signs to MP_Data/
+- Triggers: `python ml/collect_data.py [--actions Hello,Yes] [--num_sequences 30]`
+- Responsibilities: Webcam capture, landmark extraction, data persistence
 
-**Model Training (Local):**
+**Data Verification:**
+- Location: `ml/verify_data.py`
+- Triggers: `python ml/verify_data.py [--data_path PATH] [--min_hands 15]`
+- Responsibilities: Validate data quality before training
+
+**Model Training:**
 - Location: `ml/train_model.py`
-- Triggers: `python ml/train_model.py [--epochs 200] [--batch_size 16]`
-- Responsibilities: Train LSTM, save model and diagnostics
-
-**Model Training (Colab):**
-- Location: `ml/training_notebook.ipynb`
-- Triggers: Upload to Google Colab, run cells
-- Responsibilities: Same as local but on T4 GPU
+- Triggers: `python ml/train_model.py [--epochs 200] [--batch_size 16] [--learning_rate 0.001]`
+- Responsibilities: Load data, build LSTM, train, evaluate, save model
 
 **WebSocket Server:**
 - Location: `ml/ws_server.py`
-- Triggers: `uvicorn ml.ws_server:app --host 0.0.0.0 --port 8001`
-- Responsibilities: Serve sign predictions via WebSocket on port 8001
+- Triggers: `python ml/ws_server.py` or `uvicorn ws_server:app --port 8001`
+- Responsibilities: Real-time sign detection via WebSocket, health endpoint
 
-**Environment Verification:**
-- Location: `ml/test_setup.py`
-- Triggers: `python ml/test_setup.py`
-- Responsibilities: Verify imports, webcam, MediaPipe, utils contract
+**Ralph Loop:**
+- Location: `scripts/ralph/ralph.sh`
+- Triggers: `make ralph-once` (1 iteration) or `make ralph-afk` (20 iterations)
+- Responsibilities: Read TODO.md, spawn Claude, verify tests, commit changes
+
+**Tests:**
+- Location: `ml/tests/`
+- Triggers: `cd ml && pytest tests/ -x -q --tb=short`
+- Responsibilities: Automated validation of all ML pipeline components
 
 ## Error Handling
 
-**Strategy:** Try/except at handler boundaries, log and continue or exit with status code
+**Strategy:** Log errors with context, graceful degradation where possible, fail fast on critical contracts
 
 **Patterns:**
-- WebSocket handler: catch `WebSocketDisconnect`, log, cleanup MediaPipe instance (`ml/ws_server.py`)
-- Frame decoding: catch Exception, send error JSON to client, continue loop (`ml/ws_server.py`)
-- Data loading: catch per-file exceptions, log warning, skip invalid sequences (`ml/train_model.py`)
-- Test scripts: catch failures, report PASS/FAIL, exit with code 0 or 1
+- Model loading: Logs error, server starts without model (health endpoint reports `model_loaded: false`)
+- Frame decoding: Returns None for invalid input, WebSocket sends error JSON to client
+- Keypoint extraction: Runtime assertion on shape (1662,) - fails hard if violated
+- Training: Logs warnings for missing sequences, continues with available data
+- Ralph loop: Verification gate (pytest must pass) before committing changes
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Python `logging` module with INFO level
+- Python `logging` module throughout ML code
 - Format: `%(asctime)s [%(levelname)s] %(message)s`
-- Used in: `ml/ws_server.py`, `ml/train_model.py`
-- Simple scripts use `print()`: `ml/collect_data.py`, `ml/verify_data.py`
+- Levels: INFO for normal operations, WARNING for threshold violations, ERROR for failures
 
 **Validation:**
-- Keypoint shape contract enforced by `ml/utils.py` (returns zeros for missing landmarks)
-- Data quality verified by `ml/verify_data.py` before training
-- No schema validation on WebSocket messages (JSON parsed, type checked)
+- Runtime assertion on `extract_keypoints()` output shape
+- CLI argument validation (action names, numeric ranges)
+- Frame size limit (5MB) in `decode_frame()`
+- Rate limiting (60 frames / 10s per client)
 
-**Authentication:**
-- None (localhost development only)
-- CORS configured to allow all origins (`ml/ws_server.py`)
+**Configuration:**
+- Environment variable overrides with sensible defaults in `ml/utils.py`
+- CLI arguments for all scripts with argparse
+- No config files beyond `.env`
 
 ---
 

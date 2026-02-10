@@ -4,110 +4,97 @@
 
 ## APIs & External Services
 
-**Payment Processing:**
-- Not applicable (no payment integrations)
+**Anthropic Claude API:**
+- Purpose: Autonomous task implementation via Ralph loop
+- Tool: `@anthropic-ai/claude-code` CLI (installed globally in Docker)
+- Auth: API key in `ANTHROPIC_API_KEY` env var (`.env` file, gitignored)
+- Usage: `scripts/ralph/ralph.sh` spawns `claude --dangerously-skip-permissions --print`
+- Required for: Ralph autonomous loop only (not for ML inference)
 
-**Email/SMS:**
-- Not applicable (no messaging integrations)
-
-**External APIs:**
-- Google Colab - GPU-accelerated model training
-  - Integration method: Jupyter notebook uploaded to Colab (`ml/training_notebook.ipynb`)
-  - Auth: Implicit via Colab session (no explicit credentials)
-  - Data exchange: Google Drive for uploading/downloading datasets and model artifacts
+**Payment Processing:** Not integrated
+**Email/SMS:** Not integrated
+**Analytics/Monitoring:** Not integrated
 
 ## Data Storage
 
-**Databases:**
-- Not applicable (file-based data storage only)
-- Training data: NumPy .npy files in `MP_Data/{action}/{sequence}/{frame}.npy`
-- Model artifacts: `models/action_model.h5`, `models/action_model_savedmodel/`
+**Databases:** Not integrated
+- All data persisted as NumPy `.npy` files in `ml/MP_Data/`
+- No SQL or NoSQL database
 
 **File Storage:**
-- Google Drive - Data and model artifact storage during Colab training
-  - SDK/Client: `google.colab.drive` (Colab built-in)
-  - Auth: Implicit via Colab session mount
-  - Usage: Upload MP_Data.zip, download trained model
+- Local filesystem only
+- Training data: `ml/MP_Data/{action}/{sequence}/{frame}.npy`
+- Model artifacts: `ml/models/action_model.h5`
+- No cloud storage (S3, GCS, etc.)
 
-**Caching:**
-- Not applicable (no caching layer)
+**Caching:** Not integrated
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Not applicable (no authentication on WebSocket server)
-- WebSocket endpoint open on localhost for development
+**Auth Provider:** Not integrated
+- No user authentication system
+- Local-only execution model
 
-**OAuth Integrations:**
-- Not applicable
+**OAuth Integrations:** None
 
 ## Monitoring & Observability
 
-**Error Tracking:**
-- Python `logging` module only (`ml/ws_server.py`, `ml/train_model.py`)
-- No external error tracking service (Sentry, etc.)
+**Error Tracking:** Not integrated (no Sentry, etc.)
 
-**Analytics:**
-- Not applicable
+**Analytics:** Not integrated
 
 **Logs:**
-- stdout/stderr only via Python logging
-- TensorBoard logs for training visualization (`logs/{timestamp}/`)
+- Python `logging` module to stdout (`ml/ws_server.py`)
+- Format: `%(asctime)s [%(levelname)s] %(message)s`
+- Ralph loop logs to `logs/ralph-YYYYMMDD.log`
+- No external log aggregation service
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Local development server (Uvicorn on port 8001)
-- No cloud deployment configured
+- Local development via Python venv + Uvicorn
+- Docker Compose for Ralph autonomous loop
+- No cloud hosting configured
 
 **CI Pipeline:**
-- Not applicable (no CI/CD pipeline configured)
-- Manual test execution via `ml/test_setup.py`, `ml/verify_data.py`
+- `vendor/ralph-loop/.github/workflows/deploy.yml` (in vendored repo only)
+- No CI pipeline for main project
 
 ## Environment Configuration
 
 **Development:**
-- Required env vars: None (all configuration hardcoded)
-- Secrets location: Not applicable (no secrets required for ML pipeline)
-- Mock/stub services: Not applicable
+- Required env vars: None for ML pipeline (all have defaults)
+- Optional: `SENSEAI_HOST`, `SENSEAI_PORT`, `SENSEAI_CONFIDENCE_THRESHOLD`, `SENSEAI_STABILITY_WINDOW`
+- Secrets location: `.env` file (gitignored)
+- No mock/stub services needed (all on-device inference)
 
-**Staging:**
-- Not applicable (no staging environment)
+**Ralph Loop (Docker):**
+- Required: `ANTHROPIC_API_KEY` in `.env`
+- Optional: `RALPH_ITERATIONS` (default: 20)
+- Docker Compose loads env from `.env` file
 
 **Production:**
-- Secrets management: Not applicable
-- WebSocket server: Port 8001 with CORS allow-all (needs restriction for production)
+- No production deployment configured
+- Server runs via: `uvicorn ws_server:app --host 0.0.0.0 --port 8001`
 
 ## Webhooks & Callbacks
 
-**Incoming:**
-- WebSocket endpoint: `ws://localhost:8001/ws/sign-detection` (`ml/ws_server.py`)
-  - Protocol: JSON messages with base64-encoded JPEG frames
-  - Response: JSON predictions with sign name, confidence, stability flags
-  - No signature verification (development mode)
+**Incoming:** None
+**Outgoing:** None
 
-**Outgoing:**
-- Not applicable
+## On-Device Libraries (No External API Calls)
 
-## Frontend Integration Contract
+**MediaPipe** - Computer vision (on-device, no cloud)
+- Pose/face/hand detection via `mp.solutions.holistic`
+- Integration: `ml/utils.py` (mediapipe_detection, extract_keypoints)
 
-**Expected Frontend:**
-- Framework: Next.js (separate frontend team)
-- Video: PeerJS for peer-to-peer video calls
-- Connection: `ws://localhost:8001/ws/sign-detection`
+**TensorFlow** - Deep learning (on-device inference)
+- LSTM model loaded at server startup
+- Integration: `ml/ws_server.py` (lifespan context manager)
 
-**WebSocket Protocol:**
-- Client sends: `{"type": "frame", "frame": "<base64 JPEG>"}`
-- Server responds (buffering): `{"type": "buffering", "frames_collected": N, "frames_needed": 30, "hands_detected": bool}`
-- Server responds (prediction): `{"type": "sign_prediction", "sign": "Hello", "confidence": 0.95, "is_stable": true, "is_new_sign": true, "hands_detected": true, "all_predictions": {...}, "frames_processed": N}`
-
-## Backend Team Services (Separate from ML Pipeline)
-
-The following services are handled by the backend team and are NOT integrated in this ML pipeline:
-- Groq Whisper STT (Speech-to-Text)
-- Hume AI (Emotion Recognition)
-- ElevenLabs TTS (Text-to-Speech)
-- Claude API (Jargon Simplification)
+**OpenCV** - Image processing (on-device)
+- Webcam capture and frame decoding
+- Integration: `ml/collect_data.py`, `ml/ws_server.py`
 
 ---
 

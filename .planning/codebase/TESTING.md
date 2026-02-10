@@ -5,228 +5,246 @@
 ## Test Framework
 
 **Runner:**
-- No formal test framework (no pytest, unittest, nose)
-- Manual integration tests via executable Python scripts
-- `sys.exit(0)` for pass, `sys.exit(1)` for fail
+- pytest (Python) - 21 test files, 114+ test functions
+- Config: `ml/conftest.py` (root) + `ml/tests/conftest.py` (fixtures)
 
 **Assertion Library:**
-- Built-in Python `assert` statements
-- Manual condition checks with print-based PASS/FAIL output
+- pytest built-in `assert` statements
+- NumPy assertions for array comparisons (`np.all`, `np.any`)
 
 **Run Commands:**
 ```bash
-python ml/test_setup.py                    # Environment verification
-python ml/verify_data.py                   # Data quality check
-python ml/test_realtime.py                 # Real-time inference (interactive, press 'q')
-python ml/test_ws_health.py                # Server health check (requires server running)
-python ml/test_ws_client.py                # WebSocket client test (requires server running)
+cd ml
+python -m pytest tests/ -x -q --tb=short    # Run all tests (stop on first failure)
+python -m pytest tests/ -v                    # Verbose output
+python -m pytest tests/test_smoke.py          # Single file
+python -m pytest tests/ -k "keypoints"        # Match keyword
 ```
 
 ## Test File Organization
 
 **Location:**
-- Co-located with source code in `ml/` directory
-- No separate `tests/` directory
+- Automated tests: `ml/tests/test_*.py` (21 files)
+- Manual tests: `ml/test_*.py` (4 files - require webcam/server)
+- Configuration: `ml/conftest.py` (root) + `ml/tests/conftest.py` (fixtures)
 
 **Naming:**
-- `test_*.py` prefix for verification scripts
-- `verify_*.py` for data quality scripts
+- `test_{module}.py` for module-specific tests (`test_extract_keypoints.py`)
+- `test_{feature}.py` for feature-specific tests (`test_stability_filter.py`)
+- `test_{module}_{aspect}.py` for focused aspects (`test_decode_frame_hardened.py`)
 
 **Structure:**
 ```
 ml/
-  utils.py              # Shared utilities (tested by test_setup.py)
-  train_model.py        # Training (validated by verify_data.py + confusion matrix)
-  ws_server.py          # Server (tested by test_ws_health.py + test_ws_client.py)
-  collect_data.py       # Data collection (validated by verify_data.py)
-  test_setup.py         # Environment validation
-  test_realtime.py      # Real-time inference test (interactive)
-  test_ws_client.py     # WebSocket client test
-  test_ws_health.py     # Server health check
-  verify_data.py        # Data quality verification
+  conftest.py                         # Root: patches MediaPipe globally
+  tests/
+    conftest.py                       # Fixtures: mock_results_all, mock_results_none, etc.
+    test_smoke.py                     # Basic infrastructure validation
+    test_constants.py                 # ACTIONS array validation
+    test_config.py                    # Environment variable config
+    test_extract_keypoints.py         # Keypoint extraction edge cases
+    test_decode_frame.py              # Frame decoding from base64
+    test_decode_frame_hardened.py     # Hardened decoding (size, URL)
+    test_stability_filter.py          # Stability filter state machine
+    test_load_data.py                 # Data loading and shape validation
+    test_utils_assertion.py           # Runtime shape assertion
+    test_utils_paths.py               # Path resolution
+    test_utils_types.py               # Type hints on public functions
+    test_collect_args.py              # collect_data.py CLI arguments
+    test_collect_sequences.py         # Directory creation logic
+    test_realtime_args.py             # test_realtime.py CLI arguments
+    test_verify_cli.py                # verify_data.py CLI arguments
+    test_train_exceptions.py          # Training exception handling
+    test_train_lr.py                  # Learning rate CLI argument
+    test_ws_server.py                 # WebSocket endpoint behavior
+    test_ws_lifespan.py               # FastAPI lifespan (model loading)
+    test_ws_rate_limit.py             # Per-client rate limiting
+    test_ws_timing.py                 # Inference timing metrics
 ```
 
 ## Test Structure
 
 **Suite Organization:**
 ```python
-"""
-Module docstring with purpose and usage.
+import pytest
+import numpy as np
+from utils import extract_keypoints
 
-Run:
-    python test_script.py
-"""
+class TestAllLandmarksPresent:
+    """(a) All landmarks present -> correct shape and non-zero values."""
 
-def check_specific_aspect():
-    """Check one specific thing."""
-    # Implementation
-    return True  # or False
+    def test_shape_is_1662(self, mock_results_all):
+        keypoints = extract_keypoints(mock_results_all)
+        assert keypoints.shape == (1662,)
 
-def main():
-    """Orchestrate all checks."""
-    results = []
-    results.append(("Import checks", check_imports()))
-    results.append(("Webcam check", check_webcam()))
-    results.append(("Utils contract", check_utils_contract()))
+    def test_pose_section_nonzero(self, mock_results_all):
+        keypoints = extract_keypoints(mock_results_all)
+        pose = keypoints[0:132]
+        assert np.any(pose != 0), "Pose section should have non-zero values"
 
-    passed = all(r[1] for r in results)
-    if passed:
-        print("ALL CHECKS PASSED")
-        sys.exit(0)
-    else:
-        print("SOME CHECKS FAILED")
-        sys.exit(1)
+class TestNoLandmarksDetected:
+    """(b) No landmarks detected -> shape (1662,) all zeros."""
 
-if __name__ == "__main__":
-    main()
+    def test_all_zeros(self, mock_results_none):
+        keypoints = extract_keypoints(mock_results_none)
+        assert np.all(keypoints == 0)
 ```
 
 **Patterns:**
-- Each test script has a `main()` function as entry point
-- Individual check functions return True/False
-- Summary output at end with overall PASS/FAIL
-- Exit codes: 0 = pass, 1 = fail
+- Class-based grouping for related test cases (TestAllLandmarks, TestNoLandmarks, TestHandsOnly)
+- Descriptive class docstrings explain the scenario being tested
+- One assertion focus per test (but multiple expects OK)
+- Fixtures via function parameters (`mock_results_all`, `monkeypatch`, `tmp_path`)
 
 ## Mocking
 
 **Framework:**
-- No mocking framework used
-- All tests use real components (real webcam, real MediaPipe, real trained model)
+- `unittest.mock` (MagicMock, patch)
+- pytest `monkeypatch` fixture for environment variables
+- Module-level mocking in `conftest.py`
 
-**What's Tested with Real Components:**
-- Webcam access (OpenCV VideoCapture)
-- MediaPipe Holistic detection
-- TensorFlow model loading and inference
-- WebSocket server connections
-- Frame encoding/decoding
+**Critical Mock: MediaPipe Patching (`ml/conftest.py`):**
+```python
+def _ensure_mediapipe_solutions():
+    """Patch mediapipe.solutions.holistic if it doesn't exist."""
+    try:
+        import mediapipe as mp
+        _ = mp.solutions.holistic
+    except AttributeError:
+        solutions = types.ModuleType("mediapipe.solutions")
+        holistic = types.ModuleType("mediapipe.solutions.holistic")
+        holistic.FACEMESH_CONTOURS = None
+        holistic.POSE_CONNECTIONS = None
+        holistic.HAND_CONNECTIONS = None
+        holistic.Holistic = mock.MagicMock
+        solutions.holistic = holistic
+        solutions.drawing_utils = mock.MagicMock()
+        mp.solutions = solutions
 
-**What's NOT Mocked:**
-- Everything uses real dependencies (no unittest.mock, no pytest fixtures)
-- Integration-first testing philosophy
+_ensure_mediapipe_solutions()
+```
+
+**What to Mock:**
+- MediaPipe runtime (no GPU/webcam needed for tests)
+- Environment variables (via `monkeypatch.setenv`)
+- File system for data tests (via `tmp_path` fixture)
+- TensorFlow model loading (for server tests)
+
+**What NOT to Mock:**
+- `extract_keypoints()` logic (test the real function)
+- `StabilityFilter` state machine (test actual behavior)
+- NumPy operations (test real math)
 
 ## Fixtures and Factories
 
-**Test Data:**
-- No pre-recorded test fixtures
-- Real webcam frames captured during tests
-- Trained model loaded from `models/action_model.h5`
-- Data quality verified from actual `MP_Data/` recordings
+**Test Data (`ml/tests/conftest.py`):**
+```python
+class MockLandmark:
+    """Mimics a single MediaPipe landmark with x, y, z, visibility."""
+    def __init__(self, x=0.5, y=0.5, z=0.0, visibility=1.0):
+        self.x, self.y, self.z, self.visibility = x, y, z, visibility
+
+def _make_landmarks(count, seed=42):
+    """Create deterministic MockLandmark objects."""
+    rng = np.random.RandomState(seed)
+    return [MockLandmark(rng.uniform(), rng.uniform(), rng.uniform(-1,1), rng.uniform())
+            for _ in range(count)]
+
+@pytest.fixture
+def mock_results_all():
+    """ALL landmarks present (pose=33, face=468, lh=21, rh=21)."""
+    results = types.SimpleNamespace()
+    results.pose_landmarks = _landmarks_container(_make_landmarks(33, seed=1))
+    results.face_landmarks = _landmarks_container(_make_landmarks(468, seed=2))
+    results.left_hand_landmarks = _landmarks_container(_make_landmarks(21, seed=3))
+    results.right_hand_landmarks = _landmarks_container(_make_landmarks(21, seed=4))
+    return results
+
+@pytest.fixture
+def mock_results_none():
+    """NO landmarks detected (all None)."""
+
+@pytest.fixture
+def mock_results_hands_only():
+    """Only hands detected (no pose/face)."""
+```
 
 **Location:**
-- No `tests/fixtures/` directory
-- No factory functions
-- Each test script is self-contained
+- Shared fixtures: `ml/tests/conftest.py`
+- Test-local data: inline in test files
 
 ## Coverage
 
 **Requirements:**
-- No coverage target or tracking
-- No coverage tools configured (no coverage.py, pytest-cov)
-- Integration testing prioritized over unit coverage
+- No enforced coverage target
+- Focus on critical paths: keypoint extraction, stability filter, frame decoding, server endpoints
+- Ralph verification gate: `pytest tests/ -x -q --tb=short` must pass before committing
 
-**What IS Tested:**
-
-| Component | Test File | Type |
-|-----------|-----------|------|
-| Dependencies & imports | `ml/test_setup.py` | Smoke test |
-| Webcam access | `ml/test_setup.py` | Hardware test |
-| MediaPipe Holistic | `ml/test_setup.py` | Integration |
-| Keypoint shape contract (1662,) | `ml/test_setup.py` | Contract test |
-| Data sequence counts | `ml/verify_data.py` | Validation |
-| Keypoint shapes | `ml/verify_data.py` | Validation |
-| Hand detection rates | `ml/verify_data.py` | Data quality |
-| Model loading | `ml/test_realtime.py` | Integration |
-| Inference pipeline | `ml/test_realtime.py` | Manual/visual |
-| Confidence + stability filtering | `ml/test_realtime.py` | Manual/visual |
-| Server health endpoint | `ml/test_ws_health.py` | Smoke test |
-| WebSocket frame streaming | `ml/test_ws_client.py` | Integration |
-| Latency measurement | `ml/test_ws_client.py` | Performance |
-
-**What is NOT Tested:**
-- Unit tests for individual functions (no isolated testing)
-- Negative cases (invalid input, corrupted data)
-- Edge cases (extremely fast/slow predictions, model overload)
-- Concurrent WebSocket clients (multi-user stress test)
-- Error recovery (server restart, network interruption)
+**Configuration:**
+- No explicit coverage tooling configured
+- Tests can be run with `--cov` flag if needed
 
 ## Test Types
 
-**Environment Validation (`ml/test_setup.py`):**
-- Scope: Verify all dependencies installed, webcam accessible, MediaPipe works, utils contract valid
-- Automated: Yes (run and check exit code)
-- Time: ~10 seconds
+**Unit Tests (majority):**
+- Test single function/class in isolation
+- Mock external dependencies (MediaPipe, TensorFlow, filesystem)
+- Fast: each test <100ms
+- Examples: `test_extract_keypoints.py`, `test_stability_filter.py`, `test_config.py`
 
-**Data Quality (`ml/verify_data.py`):**
-- Scope: Verify collected data meets training requirements
-- Checks: Sequence counts (30 per sign), keypoint shape (1662,), hand detection (>15/30)
-- Automated: Yes (exit code 0/1)
-- Time: ~5 seconds
+**Integration Tests:**
+- Test module interactions
+- Mock only external boundaries
+- Examples: `test_ws_server.py` (FastAPI + decoding + response format)
 
-**Real-Time Inference (`ml/test_realtime.py`):**
-- Scope: Full webcam-to-prediction pipeline with visualization
-- Automated: No (requires human observation, press 'q' to quit)
-- Time: Interactive (until user exits)
+**Manual Tests (not in automated suite):**
+- `ml/test_realtime.py` - Live webcam inference (requires camera + model)
+- `ml/test_setup.py` - Environment verification
+- `ml/test_ws_client.py` - WebSocket client stress test (requires running server)
+- `ml/test_ws_health.py` - Health endpoint check (requires running server)
 
-**WebSocket Integration (`ml/test_ws_client.py`, `ml/test_ws_health.py`):**
-- Scope: Server health + WebSocket frame streaming with latency measurement
-- Prerequisites: Server must be running on port 8001
-- Automated: Partially (health check is automated, client test is interactive)
-- Time: Health check ~1 second, client test is interactive
+**E2E Tests:** Not currently implemented
 
 ## Common Patterns
 
-**Exit Code Testing:**
+**Environment Variable Testing:**
 ```python
-def main():
-    all_passed = True
-
-    if not check_imports():
-        all_passed = False
-    if not check_webcam():
-        all_passed = False
-
-    sys.exit(0 if all_passed else 1)
+def test_host_env_override(self, monkeypatch):
+    monkeypatch.setenv("SENSEAI_HOST", "127.0.0.1")
+    import importlib
+    import utils
+    importlib.reload(utils)
+    assert utils.HOST == "127.0.0.1"
 ```
 
-**Data Quality Thresholds (`ml/verify_data.py`):**
+**Error Testing:**
 ```python
-if hands_count < 15:
-    critical_failure = True
-    warnings.append(f"CRITICAL: '{action}' has only {hands_count}/30 hands")
-elif hands_count < 20:
-    warnings.append(f"WARNING: '{action}' has only {hands_count}/30 hands")
+def test_invalid_action_exits_with_error(self):
+    from collect_data import parse_args
+    with pytest.raises(SystemExit):
+        parse_args(["--actions", "InvalidSign"])
 ```
 
-**Async WebSocket Testing (`ml/test_ws_client.py`):**
+**NumPy Array Testing:**
 ```python
-async def run_client():
-    async with websockets.connect(SERVER_URL) as ws:
-        send_time = time.time()
-        await ws.send(json.dumps({"type": "frame", "frame": b64_frame}))
-        response = await ws.recv()
-        latency_ms = (time.time() - send_time) * 1000
+def test_pose_section_zeros(self, mock_results_hands_only):
+    keypoints = extract_keypoints(mock_results_hands_only)
+    pose = keypoints[0:132]
+    assert np.all(pose == 0), "Pose section should be all zeros"
 ```
 
-**Snapshot Testing:**
-- Not used in this codebase
-
-## Test Execution Workflow
-
-```bash
-# Full verification sequence:
-python ml/test_setup.py          # 1. Environment OK?
-python ml/collect_data.py        # 2. Record data (interactive)
-python ml/verify_data.py         # 3. Data quality OK?
-python ml/train_model.py         # 4. Train model
-python ml/test_realtime.py       # 5. Model works? (interactive)
-
-# WebSocket server testing (2 terminals):
-# Terminal 1:
-uvicorn ml.ws_server:app --port 8001
-# Terminal 2:
-python ml/test_ws_health.py      # 6. Server healthy?
-python ml/test_ws_client.py      # 7. End-to-end OK? (interactive)
+**State Machine Testing:**
+```python
+def test_becomes_stable_after_n_identical(self):
+    sf = StabilityFilter(window_size=5, threshold=0.7)
+    for _ in range(4):
+        result = sf.update("Hello", 0.9)
+        assert not result["is_stable"]
+    result = sf.update("Hello", 0.9)
+    assert result["is_stable"]
 ```
+
+**Snapshot Testing:** Not used (prefer explicit assertions)
 
 ---
 

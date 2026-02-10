@@ -5,6 +5,9 @@ Covers:
 (a) Default values match current hardcoded values
 (b) Environment variables override defaults using monkeypatch
 (c) MODEL_PATH resolves correctly regardless of cwd
+(d) Invalid env var values fall back to defaults
+(e) CORS_ORIGINS configurable via SENSEAI_CORS_ORIGINS
+(f) API_KEY disabled by default, enabled via SENSEAI_API_KEY
 """
 
 import os
@@ -140,5 +143,91 @@ class TestConfigInvalidEnvVars:
         import utils
         for key in list(os.environ):
             if key.startswith("SENSEAI_"):
+                del os.environ[key]
+        importlib.reload(utils)
+
+
+class TestCorsOriginsConfig:
+    """Verify CORS_ORIGINS is configurable via SENSEAI_CORS_ORIGINS."""
+
+    def test_cors_origins_default_is_wildcard(self):
+        """Default (no env var) should produce ['*']."""
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CORS_ORIGINS == ['*']
+
+    def test_cors_origins_single_origin(self, monkeypatch):
+        """Single origin should produce a one-element list."""
+        monkeypatch.setenv('SENSEAI_CORS_ORIGINS', 'http://localhost:3000')
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CORS_ORIGINS == ['http://localhost:3000']
+
+    def test_cors_origins_multiple_origins(self, monkeypatch):
+        """Comma-separated origins should produce a multi-element list."""
+        monkeypatch.setenv(
+            'SENSEAI_CORS_ORIGINS',
+            'http://localhost:3000,http://example.com',
+        )
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CORS_ORIGINS == ['http://localhost:3000', 'http://example.com']
+
+    def test_cors_origins_trims_whitespace(self, monkeypatch):
+        """Whitespace around origins should be stripped."""
+        monkeypatch.setenv(
+            'SENSEAI_CORS_ORIGINS',
+            ' http://localhost:3000 , http://example.com ',
+        )
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CORS_ORIGINS == ['http://localhost:3000', 'http://example.com']
+
+    def test_cors_origins_ignores_empty_entries(self, monkeypatch):
+        """Trailing commas should not produce empty strings."""
+        monkeypatch.setenv('SENSEAI_CORS_ORIGINS', 'http://localhost:3000,,')
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.CORS_ORIGINS == ['http://localhost:3000']
+
+    def teardown_method(self):
+        """Reload utils with clean environment after each test."""
+        import importlib
+        import utils
+        for key in list(os.environ):
+            if key.startswith('SENSEAI_'):
+                del os.environ[key]
+        importlib.reload(utils)
+
+
+class TestApiKeyConfig:
+    """Verify API_KEY configuration via SENSEAI_API_KEY."""
+
+    def test_api_key_default_is_none(self):
+        """Default (no env var) should be None (auth disabled)."""
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.API_KEY is None
+
+    def test_api_key_set_from_env(self, monkeypatch):
+        """Setting SENSEAI_API_KEY should expose the value."""
+        monkeypatch.setenv('SENSEAI_API_KEY', 'my-secret-key')
+        import importlib
+        import utils
+        importlib.reload(utils)
+        assert utils.API_KEY == 'my-secret-key'
+
+    def teardown_method(self):
+        """Reload utils with clean environment after each test."""
+        import importlib
+        import utils
+        for key in list(os.environ):
+            if key.startswith('SENSEAI_'):
                 del os.environ[key]
         importlib.reload(utils)

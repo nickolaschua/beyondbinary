@@ -36,6 +36,8 @@ from utils import (
     STABILITY_WINDOW,
     HOST,
     PORT,
+    CORS_ORIGINS,
+    API_KEY,
     StabilityFilter,
     mediapipe_detection,
     extract_keypoints,
@@ -72,7 +74,7 @@ app = FastAPI(title="SenseAI Sign Detection", version="1.0.0", lifespan=lifespan
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

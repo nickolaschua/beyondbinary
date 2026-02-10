@@ -80,6 +80,14 @@ PORT = _safe_int("SENSEAI_PORT", 8001)
 CONFIDENCE_THRESHOLD = _safe_float("SENSEAI_CONFIDENCE_THRESHOLD", 0.7)
 STABILITY_WINDOW = _safe_int("SENSEAI_STABILITY_WINDOW", 8)
 
+CORS_ORIGINS: list[str] = [
+    origin.strip()
+    for origin in os.environ.get('SENSEAI_CORS_ORIGINS', '*').split(',')
+    if origin.strip()
+]
+
+API_KEY: str | None = os.environ.get('SENSEAI_API_KEY')  # None = auth disabled
+
 # MediaPipe setup
 mp_holistic = mp.solutions.holistic
 mp_drawing = mp.solutions.drawing_utils

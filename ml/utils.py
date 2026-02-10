@@ -28,10 +28,9 @@ ACTIONS = np.array([
 
 SEQUENCE_LENGTH = 30
 NUM_SEQUENCES = 30
-DATA_PATH = os.path.join('MP_Data')
-
-# Resolve MODEL_PATH relative to this file's directory so it works regardless of cwd
 _ML_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_PATH = os.path.join(_ML_DIR, 'MP_Data')
 MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.h5')
 
 # --- Server / runtime configuration (overridable via environment variables) ---

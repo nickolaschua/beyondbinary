@@ -77,6 +77,12 @@ def parse_args():
         help="Fraction of data for test set (default: 0.1)",
     )
     parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=0.001,
+        help="Adam optimizer learning rate (default: 0.001)",
+    )
+    parser.add_argument(
         "--output_dir",
         type=str,
         default=".",
@@ -136,7 +142,7 @@ def load_data(data_path: str):
                         valid = False
                         break
                     window.append(frame)
-                except Exception as e:
+                except (ValueError, OSError, EOFError) as e:
                     logger.warning("Error loading %s: %s", frame_path, e)
                     valid = False
                     break
@@ -174,7 +180,7 @@ def load_data(data_path: str):
 # ---------------------------------------------------------------------------
 # Model Architecture
 # ---------------------------------------------------------------------------
-def build_model():
+def build_model(learning_rate: float = 0.001):
     """
     Build the LSTM model with the EXACT architecture from the spec.
 
@@ -209,7 +215,7 @@ def build_model():
     ])
 
     model.compile(
-        optimizer="adam",
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss="categorical_crossentropy",
         metrics=["categorical_accuracy"],
     )
@@ -331,7 +337,7 @@ def main():
     # Step 3: Build Model
     # -----------------------------------------------------------------------
     logger.info("Step 3/5: Building model...")
-    model = build_model()
+    model = build_model(learning_rate=args.learning_rate)
     model.summary(print_fn=logger.info)
 
     # -----------------------------------------------------------------------

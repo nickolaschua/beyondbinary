@@ -12,6 +12,7 @@ None
 
 - ✅ **v1.0 MVP** - Phases 1-10 (shipped 2026-02-10)
 - ✅ **v1.1 Refinement & Testing** - Phases 11-18 (shipped 2026-02-10)
+- 🔄 **v1.2 Frontend Integration** - Phases 19+ (in progress)
 
 ## Completed Milestones
 
@@ -56,6 +57,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
+### v1.2 Frontend Integration (Phase 19+)
+
+- [ ] **Phase 19: Frontend Integration** - Fix URL constants, wire sentence assembly + completion into LiveWorkspace UI
+
 ## Progress
 
 **Execution Order:**
@@ -81,3 +86,4 @@ Phases execute in numeric order: 1 → 2 → ... → 10 → 11 → 12 → ... �
 | 16. Edge Case & Negative Tests | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
 | 17. Performance Instrumentation | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
 | 18. Protocol Docs & Modernization | v1.1 | 1/1 | Complete | 2026-02-10 |
+| 19. Frontend Integration | v1.2 | 0/1 | Planned | - |

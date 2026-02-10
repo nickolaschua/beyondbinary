@@ -99,7 +99,7 @@ export function textToBrailleCells(text: string): BrailleCellPattern[] {
     if (pattern) {
       cells.push(pattern);
     } else {
-      // Unknown character → blank cell as a placeholder
+      // Unknown character → blank cell
       cells.push(BRAILLE_MAP[" "]);
     }
   }

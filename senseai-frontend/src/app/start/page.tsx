@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AudioAssistButton } from "@/components/AudioAssistButton";
-import { API_URL, WS_URL } from "@/lib/constants";
+import { API_URL, VIDEO_CALL_POC_URL, WS_URL } from "@/lib/constants";
 import { getProfile, readUserConfig, writeUserConfig } from "@/lib/profile";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
 
@@ -12,8 +12,7 @@ type MeetingSource = "local" | "zoom" | "meet" | "teams";
 
 interface HealthPayload {
   status: string;
-  model_loaded: boolean;
-  avg_inference_ms: number;
+  services?: Record<string, boolean>;
 }
 
 export default function StartMeetingPage() {
@@ -111,25 +110,34 @@ export default function StartMeetingPage() {
               title="Local webcam + microphone"
               description="Active in this release"
             />
+            <a
+              href={`${VIDEO_CALL_POC_URL}?backend=${encodeURIComponent(apiUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-left hover:border-cyan-400"
+            >
+              <p className="font-semibold text-slate-100">Video call (WebRTC)</p>
+              <p className="text-sm text-slate-300">Opens video-call-poc in a new tab with same backend</p>
+            </a>
             <SourceOption
               selected={source === "zoom"}
               onSelect={() => setSource("zoom")}
               title="Zoom"
-              description="Planned"
+              description="Coming later"
               disabled
             />
             <SourceOption
               selected={source === "meet"}
               onSelect={() => setSource("meet")}
               title="Google Meet"
-              description="Planned"
+              description="Coming later"
               disabled
             />
             <SourceOption
               selected={source === "teams"}
               onSelect={() => setSource("teams")}
               title="Microsoft Teams"
-              description="Planned"
+              description="Coming later"
               disabled
             />
           </div>
@@ -140,8 +148,17 @@ export default function StartMeetingPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <ReadinessCard
               title="Backend"
-              status={health?.status === "ok" && health.model_loaded}
-              detail={health ? `${health.avg_inference_ms ?? 0} ms` : healthError || "Unavailable"}
+              status={health?.status === "ok"}
+              detail={
+                health
+                  ? health.status === "ok" && health.services
+                    ? Object.entries(health.services)
+                        .filter(([, v]) => v)
+                        .map(([k]) => k)
+                        .join(", ") || "No services"
+                    : health.status
+                  : healthError || "Unavailable"
+              }
             />
             <ReadinessCard
               title="Camera"

@@ -31,6 +31,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
 
 from utils import ACTIONS, NUM_SEQUENCES, SEQUENCE_LENGTH
+from augment import augment_dataset
 
 # Set random seeds for reproducibility
 np.random.seed(42)
@@ -87,6 +88,17 @@ def parse_args():
         type=str,
         default=".",
         help="Directory to save model and artifacts (default: current dir)",
+    )
+    parser.add_argument(
+        "--augment",
+        type=int,
+        default=5,
+        help="Augmentation multiplier per sample (default: 5, set 0 to disable)",
+    )
+    parser.add_argument(
+        "--no_mirror",
+        action="store_true",
+        help="Disable left/right hand mirror augmentation",
     )
     return parser.parse_args()
 
@@ -301,6 +313,8 @@ def main():
     logger.info("Patience:    %d", args.patience)
     logger.info("Test size:   %.1f%%", args.test_size * 100)
     logger.info("Output dir:  %s", args.output_dir)
+    logger.info("Augment:     %dx%s", args.augment,
+                " (no mirror)" if args.no_mirror else " + mirror")
     logger.info("")
 
     # Validate data path
@@ -332,6 +346,24 @@ def main():
 
     logger.info("Training samples: %d", len(X_train))
     logger.info("Test samples:     %d", len(X_test))
+
+    # -----------------------------------------------------------------------
+    # Step 2b: Data Augmentation (training set only)
+    # -----------------------------------------------------------------------
+    if args.augment > 0:
+        logger.info("Step 2b: Augmenting training data (multiplier=%d, mirror=%s)...",
+                     args.augment, not args.no_mirror)
+        original_count = len(X_train)
+        X_train, y_train = augment_dataset(
+            X_train, y_train,
+            multiplier=args.augment,
+            use_mirror=not args.no_mirror,
+            seed=42,
+        )
+        logger.info("Augmented: %d -> %d training samples (%.1fx)",
+                     original_count, len(X_train), len(X_train) / original_count)
+    else:
+        logger.info("Augmentation disabled (--augment 0)")
 
     # -----------------------------------------------------------------------
     # Step 3: Build Model

@@ -26,7 +26,8 @@ import {
   type UserSettings,
   writeUserConfig,
 } from "@/lib/profile";
-import { speakText } from "@/lib/tts";
+import { API_URL } from "@/lib/constants";
+import { speakGuidance } from "@/lib/tts";
 
 interface BasicSpeechRecognition {
   lang: string;
@@ -114,8 +115,8 @@ export default function OnboardingPage() {
   }, [showIntro]);
 
   const speakGuide = (message: string) => {
-    if (!settingsRef.current.audioPrompts) return;
-    speakText(message);
+    if (!settings.audioPrompts) return;
+    speakGuidance(message);
   };
 
   const applySettings = (next: UserSettings) => {
@@ -134,7 +135,45 @@ export default function OnboardingPage() {
 
   const chooseProfile = (id: UserProfileId) => {
     setProfileId(id);
-    setVoiceStatus(`Profile selected: ${id}`);
+  };
+
+  const startVoiceSelection = () => {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceStatus("Voice selection is not supported in this browser.");
+      speakGuidance("Voice selection is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    setListening(true);
+    setVoiceStatus("Listening... Say: I am blind, I am deaf, I am mute, or I am deafblind.");
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript || "";
+      const picked = pickProfileFromSpeech(transcript);
+      if (picked) {
+        chooseProfile(picked);
+        setVoiceStatus(`Selected profile: ${picked}`);
+        speakGuidance(`Profile selected: ${picked}`);
+      } else {
+        setVoiceStatus(`No match from: ${transcript}`);
+      }
+    };
+
+    recognition.onerror = () => {
+      setVoiceStatus("Voice selection failed. Please choose manually.");
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+    };
+
+    recognition.start();
   };
 
   const runChecks = async () => {
@@ -151,22 +190,19 @@ export default function OnboardingPage() {
     }
 
     try {
-      const response = await fetch("http://localhost:8001/health", { cache: "no-store" });
+      const base = API_URL.replace(/\/$/, "");
+      const response = await fetch(`${base}/health`, { cache: "no-store" });
       if (!response.ok) {
         setHealthStatus(`Health check failed (${response.status})`);
       } else {
-        const payload = (await response.json()) as { model_loaded?: boolean };
-        setHealthStatus(payload.model_loaded ? "Backend ready" : "Backend up, model missing");
+        const payload = (await response.json()) as { status?: string };
+        setHealthStatus(payload.status === "ok" ? "Backend ready" : "Backend up, status not ok");
       }
     } catch {
       setHealthStatus("Backend unavailable");
     }
 
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      setTtsStatus("Ready");
-    } else {
-      setTtsStatus("Unavailable");
-    }
+    setTtsStatus("Backend TTS (check backend)");
 
     setChecking(false);
   };
@@ -192,10 +228,10 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (!showIntro || introAudioQueuedRef.current || !settings.audioPrompts) return;
     introAudioQueuedRef.current = true;
-    speakText(INTRO_MESSAGE);
+    speakGuidance(INTRO_MESSAGE);
 
     const replayOnFirstInteraction = () => {
-      speakText(INTRO_MESSAGE);
+      speakGuidance(INTRO_MESSAGE);
       window.removeEventListener("pointerdown", replayOnFirstInteraction);
       window.removeEventListener("keydown", replayOnFirstInteraction);
     };

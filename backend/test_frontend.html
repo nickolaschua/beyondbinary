@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SenseAI - Voice & Tone Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .status.idle {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.listening {
+            background: #fff3e0;
+            color: #f57c00;
+            animation: pulse 2s infinite;
+        }
+
+        .status.processing {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #recordBtn {
+            background: #4caf50;
+            color: white;
+        }
+
+        #recordBtn.recording {
+            background: #f44336;
+        }
+
+        #stopBtn {
+            background: #ff9800;
+            color: white;
+        }
+
+        #stopBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .result-section {
+            margin-bottom: 20px;
+        }
+
+        .result-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .result-content {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .transcript {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .tone-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .tone-positive {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .tone-neutral {
+            background: #e0e0e0;
+            color: #616161;
+        }
+
+        .tone-negative {
+            background: #ffccbc;
+            color: #d84315;
+        }
+
+        .tone-concern {
+            background: #fff9c4;
+            color: #f57f17;
+        }
+
+        .simplified {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+        }
+
+        .quick-replies {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .quick-reply {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .quick-reply:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #c62828;
+        }
+
+        .connection-status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .connection-status.connected {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .connection-status.disconnected {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+
+        .emotions-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .emotion-chip {
+            padding: 5px 12px;
+            background: #f5f5f5;
+            border-radius: 15px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 SenseAI Voice Test</h1>
+        <p class="subtitle">Test Speech-to-Text and Tone Detection</p>
+
+        <div id="connectionStatus" class="connection-status disconnected">
+            Connecting to backend...
+        </div>
+
+        <div id="statusDisplay" class="status idle">
+            Ready to record
+        </div>
+
+        <!-- Live Output Preview -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; font-family: monospace;">
+            <div style="font-size: 12px; font-weight: 600; margin-bottom: 10px; opacity: 0.9;">🔴 LIVE OUTPUT</div>
+            <div id="liveOutput" style="font-size: 14px; line-height: 1.6;">
+                <div>🎤 STT: <span id="liveStt" style="color: #fff9c4;">Waiting...</span></div>
+                <div>🎭 Tone: <span id="liveTone" style="color: #c8e6c9;">Waiting...</span></div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="recordBtn">🎤 Start Recording</button>
+            <button id="stopBtn" disabled>⏹️ Stop</button>
+        </div>
+
+        <!-- Live Results - Always Visible -->
+        <div class="results" id="results">
+            <div class="result-section">
+                <div class="result-label">🎤 Speech-to-Text (STT) Output</div>
+                <div class="transcript">
+                    <div class="result-content" id="transcriptText">
+                        <em style="color: #999;">Waiting for audio... Click "Start Recording" and speak.</em>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-section">
+                <div class="result-label">🎭 Tone Detection Output</div>
+                <div class="result-content">
+                    <span id="toneBadge" class="tone-badge tone-neutral">Waiting...</span>
+                    <div class="emotions-list" id="emotionsList">
+                        <span class="emotion-chip" style="color: #999;">No emotions detected yet</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-section">
+                <div class="result-label">✨ Simplified Text</div>
+                <div class="simplified">
+                    <div class="result-content" id="simplifiedText">
+                        <em style="color: #999;">Simplified version will appear here...</em>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-section">
+                <div class="result-label">💬 Quick Replies</div>
+                <div class="quick-replies" id="quickReplies">
+                    <span style="color: #999; font-size: 14px;">Contextual replies will appear here...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorDisplay"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let recordingInterval = null;
+
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDisplay = document.getElementById('statusDisplay');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const resultsDiv = document.getElementById('results');
+        const transcriptText = document.getElementById('transcriptText');
+        const toneBadge = document.getElementById('toneBadge');
+        const emotionsList = document.getElementById('emotionsList');
+        const simplifiedText = document.getElementById('simplifiedText');
+        const quickReplies = document.getElementById('quickReplies');
+        const errorDisplay = document.getElementById('errorDisplay');
+        const liveStt = document.getElementById('liveStt');
+        const liveTone = document.getElementById('liveTone');
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8000/ws/conversation');
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                connectionStatus.textContent = '✓ Connected to backend';
+                connectionStatus.className = 'connection-status connected';
+
+                // Set profile to deaf
+                ws.send(JSON.stringify({
+                    type: 'set_profile',
+                    profile_type: 'deaf'
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data);
+                handleWebSocketMessage(data);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                showError('WebSocket connection error');
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket closed');
+                connectionStatus.textContent = '✗ Disconnected';
+                connectionStatus.className = 'connection-status disconnected';
+                setTimeout(connectWebSocket, 3000); // Reconnect after 3s
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            switch (data.type) {
+                case 'status':
+                    updateStatus(data.message);
+                    break;
+
+                case 'transcript':
+                    // Update live preview at top
+                    liveStt.textContent = `"${data.text}"`;
+                    liveTone.textContent = `${data.tone} (${data.tone_category}) - ${(data.tone_confidence * 100).toFixed(0)}% confidence`;
+
+                    // Highlight transcript with animation
+                    transcriptText.innerHTML = `<strong>📝 ${data.text}</strong>`;
+                    transcriptText.parentElement.style.animation = 'none';
+                    setTimeout(() => {
+                        transcriptText.parentElement.style.animation = 'pulse 0.5s';
+                    }, 10);
+
+                    // Update tone badge with emphasis
+                    toneBadge.textContent = `${data.tone} (${data.tone_category})`;
+                    toneBadge.className = `tone-badge tone-${data.tone_category}`;
+                    toneBadge.style.animation = 'none';
+                    setTimeout(() => {
+                        toneBadge.style.animation = 'pulse 0.5s';
+                    }, 10);
+
+                    // Show emotions with confidence
+                    if (data.top_emotions && data.top_emotions.length > 0) {
+                        emotionsList.innerHTML = data.top_emotions
+                            .map(e => `<span class="emotion-chip">
+                                <strong>${e.name}</strong>: ${(e.score * 100).toFixed(0)}%
+                            </span>`)
+                            .join('');
+                    } else {
+                        // Show text sentiment if Hume not available
+                        emotionsList.innerHTML = `<span class="emotion-chip">
+                            Tone: ${data.tone} | Confidence: ${(data.tone_confidence * 100).toFixed(0)}%
+                        </span>`;
+                    }
+
+                    // Log to console for debugging
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log('✅ STT OUTPUT:', data.text);
+                    console.log('🎭 TONE DETECTED:', data.tone, `(${data.tone_category})`);
+                    console.log('📊 CONFIDENCE:', (data.tone_confidence * 100).toFixed(0) + '%');
+                    if (data.top_emotions) {
+                        console.log('💭 TOP EMOTIONS:', data.top_emotions.map(e => `${e.name}: ${(e.score * 100).toFixed(0)}%`).join(', '));
+                    }
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    break;
+
+                case 'simplified':
+                    simplifiedText.textContent = data.text;
+
+                    // Display quick replies
+                    quickReplies.innerHTML = data.quick_replies
+                        .map(r => `<div class="quick-reply" onclick="speakReply('${r.spoken_text}')">${r.label}</div>`)
+                        .join('');
+                    break;
+
+                case 'error':
+                    showError(data.message);
+                    break;
+            }
+        }
+
+        function updateStatus(message) {
+            const statusMap = {
+                'listening': { text: '🎤 Listening...', class: 'listening' },
+                'processing': { text: '⚙️ Processing...', class: 'processing' },
+                'idle': { text: 'Ready to record', class: 'idle' }
+            };
+
+            const status = statusMap[message] || { text: message, class: 'idle' };
+            statusDisplay.textContent = status.text;
+            statusDisplay.className = `status ${status.class}`;
+        }
+
+        function showError(message) {
+            errorDisplay.innerHTML = `<div class="error">❌ ${message}</div>`;
+            setTimeout(() => {
+                errorDisplay.innerHTML = '';
+            }, 5000);
+        }
+
+        // Audio recording
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                // Use webm for better browser compatibility
+                const options = { mimeType: 'audio/webm' };
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        console.log('🎵 Audio data available:', event.data.size, 'bytes');
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                console.log('🎤 Starting MediaRecorder...');
+                mediaRecorder.start();
+                isRecording = true;
+                console.log('✅ Recording started, state:', mediaRecorder.state);
+
+                recordBtn.textContent = '🔴 Recording...';
+                recordBtn.className = 'recording';
+                stopBtn.disabled = false;
+
+                // Tell backend we're listening
+                ws.send(JSON.stringify({ type: 'start_listening' }));
+
+                // Send audio chunks every 3 seconds
+                console.log('⏰ Setting up 3-second interval for chunking...');
+                recordingInterval = setInterval(() => {
+                    console.log('⏰ 3-second interval triggered');
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        console.log('⏸️  Stopping recorder to process chunk...');
+                        mediaRecorder.stop();
+
+                        mediaRecorder.onstop = () => {
+                            console.log('📦 Processing audio chunk...');
+                            sendAudioToBackend();
+                            audioChunks = [];
+                            if (isRecording) {
+                                console.log('🔄 Restarting recorder...');
+                                mediaRecorder.start();
+                            }
+                        };
+                    }
+                }, 3000);
+
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                showError('Could not access microphone. Please grant permission.');
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+
+            if (recordingInterval) {
+                clearInterval(recordingInterval);
+                recordingInterval = null;
+            }
+
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+
+                mediaRecorder.onstop = () => {
+                    sendAudioToBackend();
+                    audioChunks = [];
+
+                    // Stop all tracks
+                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    mediaRecorder = null;
+                };
+            }
+
+            recordBtn.textContent = '🎤 Start Recording';
+            recordBtn.className = '';
+            stopBtn.disabled = true;
+
+            // Tell backend we stopped
+            ws.send(JSON.stringify({ type: 'stop_listening' }));
+        }
+
+        async function sendAudioToBackend() {
+            if (audioChunks.length === 0) {
+                console.log('⚠️  No audio chunks to send');
+                return;
+            }
+
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            console.log('🎤 Sending audio to backend:', audioBlob.size, 'bytes');
+
+            // Convert to base64
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64Audio = reader.result.split(',')[1];
+                console.log('📦 Base64 encoded:', base64Audio.length, 'characters');
+
+                // Send to backend
+                console.log('📡 Sending via WebSocket...');
+                ws.send(JSON.stringify({
+                    type: 'audio_chunk',
+                    audio: base64Audio,
+                    format: 'webm'
+                }));
+                console.log('✅ Audio chunk sent!');
+            };
+            reader.readAsDataURL(audioBlob);
+        }
+
+        function speakReply(text) {
+            console.log('Quick reply clicked:', text);
+            // In production, this would call the TTS endpoint
+            alert(`Would speak: "${text}"`);
+        }
+
+        // Event listeners
+        recordBtn.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            }
+        });
+
+        stopBtn.addEventListener('click', stopRecording);
+
+        // Initialize
+        connectWebSocket();
+    </script>
+</body>
+</html>

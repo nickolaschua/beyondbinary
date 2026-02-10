@@ -16,6 +16,8 @@ import {
   addUtterance,
   updateUtteranceTone,
 } from './ui/captions.js';
+import { appendMessage, setBlindMode, initChat } from './ui/chat.js';
+import { pushChunk, startNewStream, setMuted, resumeContext } from './ai/ttsPlayback.js';
 
 class VideoCallApp {
   constructor() {
@@ -27,6 +29,10 @@ class VideoCallApp {
   }
   
   async init() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const profileType = urlParams.get('profile') === 'blind' ? 'blind' : 'deaf';
+    this.backendConnector.setProfile(profileType);
+
     try {
       // Get local media
       console.log('Requesting camera/microphone access...');
@@ -91,6 +97,22 @@ class VideoCallApp {
         displayCaption('[You] Backend error: ' + msg, 'local');
         updateToneIndicator('—');
       };
+      this.backendConnector.onChatMessage = (payload) => {
+        appendMessage(payload.sender, payload.text);
+        if (payload.sender === 'remote' && payload.tts) {
+          startNewStream();
+          console.log('[TTS] Incoming message will be read aloud');
+        }
+      };
+      this.backendConnector.onTtsChunk = (audioBase64) => {
+        pushChunk(audioBase64);
+      };
+      this.backendConnector.onTtsAudioEnd = () => {
+        // Stream ended; no action needed
+      };
+      this.backendConnector.onTtsError = (msg) => {
+        console.warn('[TTS]', msg);
+      };
       try {
         const audioOnlyStream = new MediaStream([this.localStream.getAudioTracks()[0]]);
         await this.backendConnector.start(audioOnlyStream);
@@ -108,6 +130,27 @@ class VideoCallApp {
 
     // Setup signaling handlers (required for remote connection)
     this.setupSignalingHandlers();
+
+    setBlindMode(profileType === 'blind');
+    initChat({
+      onSend: (text) => {
+        resumeContext();  // user gesture: allow TTS playback when chunks arrive
+        this.backendConnector.sendChatMessage(text);
+        appendMessage('local', text);
+      },
+    });
+    const ttsMuteBtn = document.getElementById('chat-tts-mute');
+    if (ttsMuteBtn) {
+      let ttsMuted = false;
+      ttsMuteBtn.addEventListener('click', () => {
+        ttsMuted = !ttsMuted;
+        setMuted(ttsMuted);
+        this.backendConnector.setTtsPreference(!ttsMuted);  // request TTS from backend when "TTS On"
+        if (!ttsMuted) resumeContext();  // user gesture: allow TTS playback
+        ttsMuteBtn.textContent = ttsMuted ? 'TTS Off' : 'TTS On';
+        ttsMuteBtn.setAttribute('aria-label', ttsMuted ? 'Unmute TTS playback' : 'Mute TTS playback');
+      });
+    }
   }
   
   setupSignalingHandlers() {
@@ -169,6 +212,7 @@ class VideoCallApp {
   
   joinRoom(roomId) {
     this.signaling.joinRoom(roomId);
+    this.backendConnector.setRoom(roomId);
   }
 }
 

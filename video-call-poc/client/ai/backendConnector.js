@@ -19,7 +19,47 @@ export class BackendConnector {
     this.onLiveCaption = null;
     this.onStatus = null;
     this.onError = null;
+    this.onChatMessage = null;
+    this.onTtsChunk = null;
+    this.onTtsAudioEnd = null;
+    this.onTtsError = null;
     this._useWebSpeech = !!SpeechRecognition;
+    this._roomId = null;
+    this._profileType = 'deaf';
+    this._wantsTts = true;  // "TTS On" by default = want incoming chat read aloud
+  }
+
+  setTtsPreference(wants) {
+    this._wantsTts = !!wants;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'set_tts_preference', value: this._wantsTts }));
+    }
+  }
+
+  setProfile(profileType) {
+    this._profileType = profileType === 'blind' ? 'blind' : 'deaf';
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'set_profile', profile_type: this._profileType }));
+    }
+  }
+
+  setRoom(roomId) {
+    this._roomId = roomId || null;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this._roomId) {
+      this.ws.send(JSON.stringify({ type: 'set_room', room: this._roomId }));
+      this.ws.send(JSON.stringify({ type: 'set_tts_preference', value: this._wantsTts }));
+    }
+  }
+
+  sendChatMessage(text, tts = false) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this._roomId) return;
+    this.ws.send(JSON.stringify({
+      type: 'chat_message',
+      room: this._roomId,
+      sender: 'local',
+      text: String(text).trim(),
+      tts: !!tts,
+    }));
   }
 
   async start(stream) {
@@ -35,8 +75,12 @@ export class BackendConnector {
 
       this.ws.onopen = () => {
         console.log('[Backend] WebSocket connected');
-        this.ws.send(JSON.stringify({ type: 'set_profile', profile_type: 'deaf' }));
+        this.ws.send(JSON.stringify({ type: 'set_profile', profile_type: this._profileType }));
         this.ws.send(JSON.stringify({ type: 'start_listening', use_web_speech: this._useWebSpeech }));
+        if (this._roomId) {
+          this.ws.send(JSON.stringify({ type: 'set_room', room: this._roomId }));
+        }
+        this.ws.send(JSON.stringify({ type: 'set_tts_preference', value: this._wantsTts }));
         if (this._useWebSpeech) {
           this._startWebSpeech(stream);
           this._startRecording(stream);
@@ -109,6 +153,27 @@ export class BackendConnector {
               break;
             case 'error':
               console.error('[Backend]', msg.message);
+              if (this.onError) this.onError(msg.message);
+              break;
+            case 'chat_message':
+              if (this.onChatMessage) {
+                this.onChatMessage({
+                  room: msg.room,
+                  sender: msg.sender,
+                  text: msg.text,
+                  tts: msg.tts,
+                });
+              }
+              break;
+            case 'tts_audio_chunk':
+              if (this.onTtsChunk && msg.audio_base64) this.onTtsChunk(msg.audio_base64);
+              break;
+            case 'tts_audio_end':
+              if (this.onTtsAudioEnd) this.onTtsAudioEnd();
+              break;
+            case 'tts_error':
+              console.warn('[Backend] TTS error:', msg.message);
+              if (this.onTtsError) this.onTtsError(msg.message);
               if (this.onError) this.onError(msg.message);
               break;
             default:

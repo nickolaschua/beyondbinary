@@ -152,6 +152,57 @@
       min-height: 2em;
       color: #e8e8e8;
     }
+    .chat-panel {
+      background: rgba(0,0,0,0.8);
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 20px;
+      max-height: 280px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-panel-blind {
+      position: absolute;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+    }
+    #chat-log {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 80px;
+      max-height: 160px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .chat-msg {
+      margin: 6px 0;
+    }
+    .chat-msg[data-sender="local"] { color: #00d4ff; }
+    .chat-msg[data-sender="remote"] { color: #ff69b4; }
+    #chat-form {
+      display: flex;
+      gap: 8px;
+    }
+    #chat-input {
+      flex: 1;
+      padding: 10px 12px;
+      background: #333;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+    }
+    #chat-input:focus {
+      outline: none;
+      border-color: #007aff;
+    }
+    #chat-send {
+      padding: 10px 20px;
+    }
   </style>
 </head>
 <body>
@@ -188,6 +239,17 @@
         <div class="braille-label">Braille (UEB)</div>
         <pre id="braille-display" class="braille-display"></pre>
       </div>
+    </div>
+
+    <div id="chat-panel" class="chat-panel" aria-label="Chat">
+      <div id="chat-log" role="log" aria-live="polite" aria-label="Chat messages">
+        <div id="chat-log-inner"></div>
+      </div>
+      <form id="chat-form" aria-label="Send a message">
+        <input type="text" id="chat-input" placeholder="Type a message..." aria-label="Chat message" autocomplete="off" />
+        <button type="submit" id="chat-send">Send</button>
+        <button type="button" id="chat-tts-mute" aria-label="Mute TTS playback">TTS On</button>
+      </form>
     </div>
   </div>
   

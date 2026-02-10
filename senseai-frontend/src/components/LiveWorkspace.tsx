@@ -8,6 +8,7 @@ import { BrailleCell } from "@/components/BrailleCell";
 import { textToBrailleCells, type BrailleCellPattern } from "@/braille/mapping";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
+import { useVoiceCommands, type VoiceCommand } from "@/hooks/useVoiceCommands";
 import { getProfile, type UserProfileId } from "@/lib/profile";
 import { writeSessionSummary } from "@/lib/session";
 import { speakText } from "@/lib/tts";
@@ -71,6 +72,8 @@ export function LiveWorkspace({
   const [errors, setErrors] = useState<string[]>([]);
   const [customReply, setCustomReply] = useState("");
   const [quickRepliesUsed, setQuickRepliesUsed] = useState(0);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState("Voice commands live");
 
   const useBraille = profileId === "blind" || profileId === "deafblind";
   const speakIncoming = profileId === "blind";
@@ -110,7 +113,7 @@ export function LiveWorkspace({
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: "user" },
+        video: { width: 1280, height: 720, facingMode: "user" },
         audio: false,
       });
       if (videoRef.current) {
@@ -173,6 +176,25 @@ export function LiveWorkspace({
     speakText(reply);
   };
 
+  const voiceCommands: VoiceCommand[] = [
+    { phrases: ["camera on", "turn camera on"], action: () => startCamera() },
+    { phrases: ["camera off", "turn camera off"], action: () => stopCamera() },
+    { phrases: ["start streaming", "stream on"], action: () => setStreaming(true) },
+    { phrases: ["pause streaming", "stop streaming", "stream off"], action: () => setStreaming(false) },
+    { phrases: ["reconnect", "connect socket"], action: () => connect() },
+    { phrases: ["disconnect", "disconnect socket"], action: () => disconnect() },
+    { phrases: ["end session", "finish session"], action: () => endSession() },
+    { phrases: ["reply one", "first reply"], action: () => quickReplies[0] && sendReply(quickReplies[0]) },
+    { phrases: ["reply two", "second reply"], action: () => quickReplies[1] && sendReply(quickReplies[1]) },
+    { phrases: ["reply three", "third reply"], action: () => quickReplies[2] && sendReply(quickReplies[2]) },
+  ];
+
+  useVoiceCommands({
+    enabled: voiceEnabled,
+    commands: voiceCommands,
+    onHeard: (transcript) => setVoiceStatus(`Heard: ${transcript}`),
+  });
+
   const endSession = () => {
     stopCamera();
     disconnect();
@@ -189,7 +211,7 @@ export function LiveWorkspace({
   };
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
+    <main className="mx-auto w-full max-w-7xl px-6 py-8">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm uppercase tracking-[0.16em] text-slate-400">Live Session</p>
@@ -203,6 +225,13 @@ export function LiveWorkspace({
           </Link>
           <button
             type="button"
+            onClick={() => setVoiceEnabled((prev) => !prev)}
+            className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200"
+          >
+            Voice: {voiceEnabled ? "On" : "Off"}
+          </button>
+          <button
+            type="button"
             onClick={endSession}
             className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400"
           >
@@ -210,102 +239,110 @@ export function LiveWorkspace({
           </button>
         </div>
       </header>
+      <p className="mb-4 text-sm text-slate-300">{voiceStatus}</p>
 
-      <section className={`grid gap-6 ${profileId === "deafblind" ? "lg:grid-cols-[1fr_1.2fr]" : "lg:grid-cols-[1.2fr_1fr]"}`}>
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
-            <h2 className="text-2xl font-semibold text-slate-100">Conversation input</h2>
-            <div className="mt-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
-              <video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline />
-            </div>
-            <canvas ref={canvasRef} className="hidden" />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" onClick={cameraOn ? stopCamera : startCamera} className="rounded-lg border border-slate-500 px-4 py-2">
-                {cameraOn ? "Turn camera off" : "Turn camera on"}
-              </button>
-              <button
-                type="button"
-                disabled={!cameraOn}
-                onClick={() => setStreaming((prev) => !prev)}
-                className="rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950 disabled:opacity-70"
-              >
-                {streaming ? "Pause streaming" : "Start streaming"}
-              </button>
-              <button type="button" onClick={isConnected ? disconnect : connect} className="rounded-lg border border-slate-500 px-4 py-2">
-                {isConnected ? "Disconnect socket" : "Reconnect socket"}
-              </button>
-            </div>
-            {buffering && <p className="mt-3 text-sm text-amber-300">{buffering}</p>}
-          </section>
-
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
-            <h2 className="text-2xl font-semibold text-slate-100">
-              {profileId === "deaf" || profileId === "mute"
-                ? "Current interpretation (tone + captions)"
-                : "Current interpretation"}
-            </h2>
-            <p className={`mt-3 font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>{latestSign}</p>
-            <p className="mt-2 text-slate-300">Confidence: {Math.round(confidence * 100)}%</p>
-            {showCaptionFeed && (
-              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
-                <h3 className="text-lg font-semibold text-slate-100">Caption stream</h3>
-                {transcript.length === 0 ? <p className="mt-2 text-slate-400">No stable signs yet.</p> : <p className="mt-2 text-slate-200">{transcript.join(" ")}</p>}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <aside className="space-y-6">
-          {useBraille && (
-            <section className="rounded-2xl border border-cyan-500 bg-slate-900/70 p-5">
-              <h2 className="text-2xl font-semibold text-slate-100">Braille output</h2>
-              <div className="mt-4 overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 p-3">
-                {brailleCells.length === 0 ? <span className="text-slate-400">Waiting for conversation...</span> : brailleCells.map((cell, index) => <BrailleCell key={`braille-${index}`} pattern={cell} />)}
-              </div>
-            </section>
-          )}
-
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
-            <h2 className="text-2xl font-semibold text-slate-100">Predictive quick replies</h2>
-            <div className="mt-4 grid gap-2">
-              {quickReplies.map((reply) => (
-                <button key={reply} type="button" onClick={() => sendReply(reply)} className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-left hover:border-cyan-300">
-                  {reply}
-                </button>
-              ))}
-            </div>
-            <label className="mt-4 block text-sm text-slate-300">
-              Custom reply
-              <input value={customReply} onChange={(event) => setCustomReply(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2" />
-            </label>
+      <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+          <h2 className="text-2xl font-semibold text-slate-100">Conversation input</h2>
+          <div className="mt-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+            <video ref={videoRef} className="aspect-[16/9] w-full object-cover" muted playsInline />
+          </div>
+          <canvas ref={canvasRef} className="hidden" />
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={cameraOn ? stopCamera : startCamera} className="rounded-lg border border-slate-500 px-4 py-2">
+              {cameraOn ? "Turn camera off" : "Turn camera on"}
+            </button>
             <button
               type="button"
-              onClick={() => {
-                const trimmed = customReply.trim();
-                if (!trimmed) return;
-                sendReply(trimmed);
-                setCustomReply("");
-              }}
-              className="mt-2 rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950"
+              disabled={!cameraOn}
+              onClick={() => setStreaming((prev) => !prev)}
+              className="rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950 disabled:opacity-70"
             >
-              Send custom reply
+              {streaming ? "Pause streaming" : "Start streaming"}
             </button>
-          </section>
+            <button type="button" onClick={isConnected ? disconnect : connect} className="rounded-lg border border-slate-500 px-4 py-2">
+              {isConnected ? "Disconnect socket" : "Reconnect socket"}
+            </button>
+          </div>
+          {buffering && <p className="mt-3 text-sm text-amber-300">{buffering}</p>}
+        </section>
 
-          {errors.length > 0 && (
-            <section className="rounded-2xl border border-rose-700 bg-rose-950/40 p-6">
-              <h2 className="text-xl font-semibold text-rose-100">Recent errors</h2>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-rose-100">
-                {errors.map((error, index) => (
-                  <li key={`${error}-${index}`}>{error}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </aside>
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+          <h2 className="text-2xl font-semibold text-slate-100">Predictive quick replies</h2>
+          <div className="mt-4 grid gap-2">
+            {quickReplies.map((reply) => (
+              <button key={reply} type="button" onClick={() => sendReply(reply)} className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-left hover:border-cyan-300">
+                {reply}
+              </button>
+            ))}
+          </div>
+          <label className="mt-4 block text-sm text-slate-300">
+            Custom reply
+            <input value={customReply} onChange={(event) => setCustomReply(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2" />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              const trimmed = customReply.trim();
+              if (!trimmed) return;
+              sendReply(trimmed);
+              setCustomReply("");
+            }}
+            className="mt-2 rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950"
+          >
+            Send custom reply
+          </button>
+        </section>
       </section>
 
-      
+      <section className="mt-6 space-y-4">
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+          <h2 className="text-2xl font-semibold text-slate-100">
+            {profileId === "deaf" || profileId === "mute"
+              ? "Current interpretation (tone + captions)"
+              : "Current interpretation"}
+          </h2>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <p className={`font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>{latestSign}</p>
+            <p className="text-slate-300">Confidence: {Math.round(confidence * 100)}%</p>
+          </div>
+        </section>
+
+        {showCaptionFeed && (
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+            <h2 className="text-2xl font-semibold text-slate-100">Caption output</h2>
+            {transcript.length === 0 ? (
+              <p className="mt-2 text-slate-400">No stable signs yet.</p>
+            ) : (
+              <p className="mt-2 text-slate-200">{transcript.join(" ")}</p>
+            )}
+          </section>
+        )}
+
+        {useBraille && (
+          <section className="rounded-2xl border border-cyan-500 bg-slate-900/70 p-5">
+            <h2 className="text-2xl font-semibold text-slate-100">Braille output</h2>
+            <div className="mt-3 overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 p-3">
+              {brailleCells.length === 0 ? (
+                <span className="text-slate-400">Waiting for conversation...</span>
+              ) : (
+                brailleCells.map((cell, index) => <BrailleCell key={`braille-${index}`} pattern={cell} />)
+              )}
+            </div>
+          </section>
+        )}
+
+        {errors.length > 0 && (
+          <section className="rounded-2xl border border-rose-700 bg-rose-950/40 p-5">
+            <h2 className="text-xl font-semibold text-rose-100">Recent errors</h2>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-rose-100">
+              {errors.map((error, index) => (
+                <li key={`${error}-${index}`}>{error}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </section>
     </main>
   );
 }

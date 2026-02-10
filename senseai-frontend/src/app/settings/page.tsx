@@ -6,6 +6,7 @@ import { AudioAssistButton } from "@/components/AudioAssistButton";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { applyUserSettings, clampTextScale } from "@/lib/accessibility";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
+import { useVoiceCommands, type VoiceCommand } from "@/hooks/useVoiceCommands";
 import {
   DEFAULT_SETTINGS,
   PROFILES,
@@ -23,6 +24,8 @@ export default function SettingsPage() {
   const [profileId, setProfileId] = useState<UserProfileId>(initialConfig?.profileId ?? "deafblind");
   const [settings, setSettings] = useState<UserSettings>(initialConfig?.settings ?? DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState("Voice commands live");
 
   usePageAudioGuide("Settings page. Choose user profile and accessibility options.");
 
@@ -42,6 +45,45 @@ export default function SettingsPage() {
     applyUserSettings(next);
   };
 
+  const voiceCommands: VoiceCommand[] = [
+    { phrases: ["save", "save settings"], action: () => onSave() },
+    { phrases: ["back", "go back", "start"], action: () => window.location.assign("/start") },
+    { phrases: ["blind"], action: () => setProfileId("blind") },
+    { phrases: ["deafblind", "deaf blind"], action: () => setProfileId("deafblind") },
+    { phrases: ["deaf"], action: () => setProfileId("deaf") },
+    { phrases: ["mute"], action: () => setProfileId("mute") },
+    {
+      phrases: ["contrast on", "enable contrast"],
+      action: () => updateSettings({ ...settings, highContrast: true }),
+    },
+    {
+      phrases: ["contrast off", "disable contrast"],
+      action: () => updateSettings({ ...settings, highContrast: false }),
+    },
+    {
+      phrases: ["audio on", "enable audio prompts"],
+      action: () => updateSettings({ ...settings, audioPrompts: true }),
+    },
+    {
+      phrases: ["audio off", "disable audio prompts"],
+      action: () => updateSettings({ ...settings, audioPrompts: false }),
+    },
+    {
+      phrases: ["large text", "text large"],
+      action: () => updateSettings({ ...settings, textScale: clampTextScale(120) }),
+    },
+    {
+      phrases: ["default text", "text default"],
+      action: () => updateSettings({ ...settings, textScale: clampTextScale(100) }),
+    },
+  ];
+
+  useVoiceCommands({
+    enabled: voiceEnabled && settings.audioPrompts,
+    commands: voiceCommands,
+    onHeard: (transcript) => setVoiceStatus(`Heard: ${transcript}`),
+  });
+
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-10">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -54,8 +96,16 @@ export default function SettingsPage() {
           <Link href="/start" className="rounded-lg border border-slate-600 px-3 py-2 text-slate-200">
             Back
           </Link>
+          <button
+            type="button"
+            onClick={() => setVoiceEnabled((prev) => !prev)}
+            className="rounded-lg border border-slate-600 px-3 py-2 text-slate-200"
+          >
+            Voice: {voiceEnabled ? "On" : "Off"}
+          </button>
         </div>
       </header>
+      <p className="mb-4 text-sm text-slate-300">{voiceStatus}</p>
 
       <section className="space-y-4">
         <article className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">

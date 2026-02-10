@@ -92,8 +92,8 @@ beyondbinary/
 
 **docs/**
 - Purpose: Project documentation and Ralph task queue
-- Contains: PRD, TODO lists
-- Key files: `PRD.md` (requirements), `TODO.md` (task list with checkboxes)
+- Contains: PRD, TODO lists, protocol documentation
+- Key files: `PRD.md` (requirements), `TODO.md` (task list with checkboxes), `WEBSOCKET.md` (WebSocket protocol reference)
 
 ## Key File Locations
 
@@ -129,6 +129,7 @@ beyondbinary/
 - `README.md` - Setup and usage guide
 - `docs/PRD.md` - Product requirements
 - `docs/TODO.md` - Task list (Ralph work queue)
+- `docs/WEBSOCKET.md` - WebSocket protocol reference for frontend integration
 
 ## Naming Conventions
 

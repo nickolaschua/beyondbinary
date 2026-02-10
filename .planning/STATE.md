@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** A working, reliable sign detection pipeline that the frontend can connect to — signs performed on webcam must appear as text predictions in the browser with minimal latency and few false positives.
-**Current focus:** Phase 18 — Protocol Docs & Modernization
+**Current focus:** v1.1 Milestone Complete
 
 ## Current Position
 
-Phase: 17 of 18 (Phase 14 complete, 15-17 pre-GSD)
-Plan: 1 of 1 in Phase 14
-Status: Phase 14 complete
-Last activity: 2026-02-10 — Completed 14-01-PLAN.md
+Phase: 18 of 18 (all phases complete)
+Plan: 1 of 1 in Phase 18
+Status: Milestone complete
+Last activity: 2026-02-10 — Completed 18-01-PLAN.md
 
-Progress: [█████████████████░] 17/18 phases
+Progress: [██████████████████] 18/18 phases
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: 27 min
-- Total execution time: 0.9 hours
+- Total plans completed: 3
+- Average duration: 19 min
+- Total execution time: 1.0 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [█████████████████░] 17/18 phases
 |-------|-------|-------|----------|
 | 11 | 1 | 35 min | 35 min |
 | 14 | 1 | 19 min | 19 min |
+| 18 | 1 | 3 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 35 min, 19 min
-- Trend: Improving (second plan 46% faster)
+- Last 5 plans: 35 min, 19 min, 3 min
+- Trend: Improving (docs plan completed in 3 min)
 
 ## Accumulated Context
 
@@ -52,11 +53,11 @@ Recent decisions affecting current work:
 
 ### Deferred Issues
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- None — venv is functional, all imports pass, test_setup.py ALL CHECKS PASSED
+- None — all phases complete, milestone ready for archival
 
 ### Roadmap Evolution
 
@@ -64,11 +65,12 @@ None yet.
 - v1.1 Refinement & Testing created: dependency resolution, hardening, testing, 8 phases (Phase 11-18)
 - Phase 11 complete: Python 3.12 venv with compatible dependency set
 - Phases 12-13, 15-17 retroactively complete: Ralph loop built constants consolidation, error handling, tests, edge case tests, and performance instrumentation during v1.0 work
-- Remaining: Phase 14 (CORS, env var validation, API key auth) and Phase 18 (WebSocket protocol docs)
 - Phase 14 complete: CORS configurable, env var validation, optional API key auth — 131 tests passing
+- Phase 18 complete: WebSocket protocol documentation (docs/WEBSOCKET.md)
+- v1.1 milestone fully complete — all 18 phases done
 
 ## Session Continuity
 
 Last session: 2026-02-10
-Stopped at: Completed 14-01-PLAN.md, Phase 18 next
+Stopped at: Completed 18-01-PLAN.md — v1.1 milestone complete
 Resume file: None

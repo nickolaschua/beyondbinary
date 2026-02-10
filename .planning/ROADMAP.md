@@ -11,7 +11,7 @@ None
 ## Milestones
 
 - ✅ **v1.0 MVP** - Phases 1-10 (shipped 2026-02-10)
-- 🚧 **v1.1 Refinement & Testing** - Phases 11-18 (in progress)
+- ✅ **v1.1 Refinement & Testing** - Phases 11-18 (shipped 2026-02-10)
 
 ## Phases
 
@@ -87,7 +87,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-### 🚧 v1.1 Refinement & Testing (In Progress)
+### ✅ v1.1 Refinement & Testing (Shipped 2026-02-10)
 
 **Milestone Goal:** Resolve dependency hell, harden the pipeline against edge cases and security issues, add proper test coverage, and instrument for performance monitoring.
 
@@ -98,7 +98,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 15: Unit Tests** - pytest setup, unit tests for core functions with mocks *(completed by Ralph loop — 21 files, 114+ tests)*
 - [x] **Phase 16: Edge Case & Negative Tests** - Invalid inputs, corrupted data, oversized payloads *(completed by Ralph loop — test_decode_frame_hardened.py etc.)*
 - [x] **Phase 17: Performance Instrumentation** - Latency logging, timing middleware, slow-prediction warnings *(completed by Ralph loop — inference_times deque, /health endpoint)*
-- [ ] **Phase 18: Protocol Docs & Modernization** - WebSocket message schema documentation
+- [x] **Phase 18: Protocol Docs & Modernization** - WebSocket message schema documentation
 
 #### Phase 11: Dependency Resolution
 **Goal**: Working Python 3.12 venv with all pinned dependencies installed and verified. MediaPipe, TensorFlow, OpenCV all import cleanly. Webcam + MediaPipe Holistic detection confirmed working. All existing scripts run without import errors.
@@ -161,10 +161,10 @@ Plans:
 **Already done**: FastAPI lifespan context manager (`ws_server.py` lines 55-67). Runtime keypoint shape assertion (`utils.py` line 156).
 **Remaining work**: WebSocket protocol documentation (message types, JSON schemas, error codes, connection lifecycle)
 **Research**: Unlikely (documenting existing behavior)
-**Plans**: 0/1
+**Plans**: 1/1 complete
 
 Plans:
-- [ ] 18-01: WebSocket protocol documentation (docs/WEBSOCKET.md)
+- [x] 18-01: WebSocket protocol documentation (docs/WEBSOCKET.md)
 
 ## Progress
 
@@ -190,4 +190,4 @@ Phases execute in numeric order: 1 → 2 → ... → 10 → 11 → 12 → ... �
 | 15. Unit Tests | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
 | 16. Edge Case & Negative Tests | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
 | 17. Performance Instrumentation | v1.1 | 0/0 | Complete (pre-GSD) | 2026-02-10 |
-| 18. Protocol Docs & Modernization | v1.1 | 0/1 | Not started | - |
+| 18. Protocol Docs & Modernization | v1.1 | 1/1 | Complete | 2026-02-10 |

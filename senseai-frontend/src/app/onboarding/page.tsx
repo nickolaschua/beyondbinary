@@ -17,6 +17,7 @@ import { AudioAssistButton } from "@/components/AudioAssistButton";
 import { BrailleCell } from "@/components/BrailleCell";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { textToBrailleCells } from "@/braille/mapping";
+import { useVoiceCommands, type VoiceCommand } from "@/hooks/useVoiceCommands";
 import { applyUserSettings, clampTextScale } from "@/lib/accessibility";
 import {
   DEFAULT_SETTINGS,
@@ -207,6 +208,22 @@ export default function OnboardingPage() {
       window.removeEventListener("keydown", replayOnFirstInteraction);
     };
   }, [settings.audioPrompts, showIntro]);
+
+  const introVoiceCommands: VoiceCommand[] = [
+    {
+      phrases: ["continue", "start", "next"],
+      action: () => {
+        setShowIntro(false);
+        speakGuide(STEP_HINTS[0]);
+      },
+    },
+  ];
+
+  useVoiceCommands({
+    enabled: showIntro && voiceEnabled && settings.audioPrompts,
+    commands: introVoiceCommands,
+    onHeard: (transcript) => setVoiceStatus(`Heard: ${transcript}`),
+  });
 
   useEffect(() => {
     if (showIntro || !voiceEnabled) return;

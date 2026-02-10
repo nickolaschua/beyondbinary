@@ -8,14 +8,13 @@ import { BrailleCell } from "@/components/BrailleCell";
 import { textToBrailleCells, type BrailleCellPattern } from "@/braille/mapping";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
-import { useVoiceCommands, type VoiceCommand } from "@/hooks/useVoiceCommands";
 import { getProfile, type UserProfileId } from "@/lib/profile";
 import { writeSessionSummary } from "@/lib/session";
 import { speakText, pushTtsChunk, startNewTtsStream } from "@/lib/tts";
+import { getToneDisplay } from "@/lib/toneDisplay";
 
 const AUDIO_CHUNK_INTERVAL_MS = 1500;
-const hasSpeechRecognition =
-  typeof window !== "undefined" && !!(window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
+const USE_BROWSER_WEB_SPEECH = false;
 
 type SignPrediction = {
   type: "sign_prediction";
@@ -32,7 +31,11 @@ type WsPayload =
   | { type: "sentence_complete"; sentence: string; word_count?: number };
 
 type BackendQuickReply = { label: string; spoken_text: string };
-type ConversationLine = { text: string; tone?: string };
+type ConversationLine = { text: string; tone?: string; utteranceId?: string };
+const QUICK_REPLY_MIN_REFRESH_MS = 4000;
+
+const hasSpeechRecognition =
+  typeof window !== "undefined" && !!(window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
 type ChatMessage = { sender: "local" | "remote"; text: string; tts?: boolean };
 
 const REPLIES_BY_SIGN: Record<string, string[]> = {
@@ -59,7 +62,7 @@ export function LiveWorkspace({
   const profile = getProfile(profileId);
   const router = useRouter();
   usePageAudioGuide(
-    `${profile.label} live workspace. Turn camera on, start streaming, and use quick replies for faster responses.`
+    `${profile.label} live workspace. Turn camera on to stream sign detection; use quick replies for faster responses.`
   );
 
   const wsEndpoint = useMemo(() => {
@@ -81,11 +84,14 @@ export function LiveWorkspace({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunkIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const startSendingAudioRef = useRef<() => void>(() => {});
+  const lastQuickReplyUpdateRef = useRef<number>(0);
 
   const [cameraOn, setCameraOn] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [latestSign, setLatestSign] = useState("Sign (stub)");
+  const NO_SIGN_YET = "—";
+  const [latestSign, setLatestSign] = useState(NO_SIGN_YET);
   const [confidence, setConfidence] = useState(0);
+  const [hasReceivedSign, setHasReceivedSign] = useState(false);
   const [transcript, setTranscript] = useState<string[]>([]);
   const [conversationTranscript, setConversationTranscript] = useState<ConversationLine[]>([]);
   const [convStatus, setConvStatus] = useState<string>("");
@@ -117,22 +123,86 @@ export function LiveWorkspace({
       switch (type) {
         case "transcript":
           if (msg.text != null) {
-            setConversationTranscript((prev) => [...prev, { text: String(msg.text), tone: msg.tone != null ? String(msg.tone) : undefined }]);
+            const utteranceId = msg.utterance_id != null ? String(msg.utterance_id) : undefined;
+            setConversationTranscript((prev) => {
+              if (!utteranceId) {
+                return [
+                  ...prev,
+                  { text: String(msg.text), tone: msg.tone != null ? String(msg.tone) : undefined, utteranceId },
+                ];
+              }
+
+              const idx = prev.findIndex((line) => line.utteranceId === utteranceId);
+              if (idx === -1) {
+                return [
+                  ...prev,
+                  { text: String(msg.text), tone: msg.tone != null ? String(msg.tone) : undefined, utteranceId },
+                ];
+              }
+
+              const next = [...prev];
+              next[idx] = {
+                ...next[idx],
+                text: String(msg.text),
+                tone: msg.tone != null ? String(msg.tone) : next[idx].tone,
+              };
+              return next;
+            });
           }
           break;
         case "utterance_created":
           if (msg.text != null) {
             const tone = msg.tone as { label?: string } | undefined;
-            setConversationTranscript((prev) => [...prev, { text: String(msg.text), tone: tone?.label }]);
+            const utteranceId = msg.utterance_id != null ? String(msg.utterance_id) : undefined;
+            setConversationTranscript((prev) => {
+              if (!utteranceId) {
+                return [...prev, { text: String(msg.text), tone: tone?.label, utteranceId }];
+              }
+
+              const idx = prev.findIndex((line) => line.utteranceId === utteranceId);
+              if (idx === -1) {
+                return [...prev, { text: String(msg.text), tone: tone?.label, utteranceId }];
+              }
+
+              const next = [...prev];
+              next[idx] = { ...next[idx], text: String(msg.text), tone: tone?.label ?? next[idx].tone };
+              return next;
+            });
             if (tone?.label) setLastConvTone(tone.label);
           }
           break;
-        case "tone_update":
-          if (msg.tone != null) setLastConvTone(String(msg.tone));
+        case "tone_update": {
+          const toneStr = msg.tone != null ? String(msg.tone) : null;
+          if (toneStr) setLastConvTone(toneStr);
+          const utteranceId = msg.utterance_id != null ? String(msg.utterance_id) : undefined;
+          if (utteranceId && toneStr) {
+            setConversationTranscript((prev) =>
+              prev.map((line) => (line.utteranceId === utteranceId ? { ...line, tone: toneStr } : line))
+            );
+          }
           break;
+        }
         case "simplified":
           if (msg.text != null) setSimplifiedText(String(msg.text));
-          if (Array.isArray(msg.quick_replies)) setBackendQuickReplies(msg.quick_replies as BackendQuickReply[]);
+          if (Array.isArray(msg.quick_replies)) {
+            const now = Date.now();
+            const nextReplies = (msg.quick_replies as BackendQuickReply[])
+              .map((r) => ({
+                label: String(r.label ?? "").trim(),
+                spoken_text: String(r.spoken_text ?? "").trim(),
+              }))
+              .filter((r) => r.label.length > 0)
+              .slice(0, 4);
+
+            if (nextReplies.length > 0) {
+              const shouldRefresh = now - lastQuickReplyUpdateRef.current >= QUICK_REPLY_MIN_REFRESH_MS;
+              setBackendQuickReplies((prev) => {
+                if (prev.length > 0 && !shouldRefresh) return prev;
+                lastQuickReplyUpdateRef.current = now;
+                return nextReplies;
+              });
+            }
+          }
           break;
         case "summary":
           if (msg.text != null && profileId === "blind") speakText(String(msg.text), apiUrl);
@@ -190,6 +260,7 @@ export function LiveWorkspace({
       setLatestSign(cleanSign);
       setConfidence(payload.confidence);
       setSentenceInProgress(payload.sentence_in_progress ?? "");
+      setHasReceivedSign(true);
       if (payload.is_new_sign && !(payload as SignPrediction & { _mock?: boolean })._mock) {
         setTranscript((prev) => [...prev, cleanSign]);
         if (useBraille) {
@@ -211,19 +282,32 @@ export function LiveWorkspace({
     onMessage: handleConvMessage,
   });
 
+  // Ref so async callbacks (MediaRecorder, Web Speech) always use current WS
+  const sendConvJSONRef = useRef(sendConvJSON);
+  useEffect(() => {
+    sendConvJSONRef.current = sendConvJSON;
+  }, [sendConvJSON]);
+
   const backendProfileType = profileId === "blind" ? "blind" : "deaf";
 
+  // 1) Send setup messages as soon as conversation WS is open (match test room order)
+  // Keep STT in backend so transcript + tone both come from Python pipeline.
   useEffect(() => {
     if (!convConnected || !sendConvJSON) return;
     sendConvJSON({ type: "set_profile", profile_type: backendProfileType });
+    sendConvJSON({ type: "start_listening", use_web_speech: false });
     sendConvJSON({ type: "set_room", room: sessionId });
     sendConvJSON({ type: "set_tts_preference", value: wantsTts });
-    sendConvJSON({ type: "start_listening", use_web_speech: hasSpeechRecognition });
   }, [convConnected, backendProfileType, sessionId, wantsTts, sendConvJSON]);
 
   const startSendingAudio = useCallback(() => {
-    if (!mediaStreamRef.current || !sendConvJSON) return;
     const stream = mediaStreamRef.current;
+    if (!stream) return;
+    const audioTracks = stream.getAudioTracks();
+    if (!audioTracks.length) {
+      setErrors((prev) => [...prev.slice(-5), "No microphone track"]);
+      return;
+    }
     const mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
     const mimeType = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
     const options = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : {};
@@ -237,12 +321,23 @@ export function LiveWorkspace({
         recorder = new MediaRecorder(stream);
       }
     }
+    const chunkFormat = (() => {
+      const type = (mimeType || "").toLowerCase();
+      if (type.includes("mp4")) return "mp4";
+      if (type.includes("m4a")) return "m4a";
+      if (type.includes("ogg")) return "ogg";
+      return "webm";
+    })();
+
     recorder.ondataavailable = (event) => {
-      if (event.data?.size && sendConvJSON) {
+      if (event.data?.size) {
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = (reader.result as string)?.split(",")[1];
-          if (base64) sendConvJSON({ type: "audio_chunk", audio: base64, format: "webm" });
+          if (base64) {
+            const send = sendConvJSONRef.current;
+            if (send) send({ type: "audio_chunk", audio: base64, format: chunkFormat });
+          }
         };
         reader.readAsDataURL(event.data);
       }
@@ -250,41 +345,69 @@ export function LiveWorkspace({
     recorder.onstop = () => {
       recorderRef.current = null;
       if (chunkIntervalRef.current) clearTimeout(chunkIntervalRef.current);
-      chunkIntervalRef.current = setTimeout(startSendingAudio, 0);
+      chunkIntervalRef.current = setTimeout(() => {
+        startSendingAudioRef.current();
+      }, 0);
     };
-    recorder.start();
+    try {
+      // Request timeslice so we get chunks every interval (like test room)
+      recorder.start(AUDIO_CHUNK_INTERVAL_MS);
+    } catch {
+      recorder.start();
+    }
     recorderRef.current = recorder;
     if (chunkIntervalRef.current) clearTimeout(chunkIntervalRef.current);
     chunkIntervalRef.current = setTimeout(() => {
       if (recorderRef.current?.state === "recording") recorderRef.current.stop();
     }, AUDIO_CHUNK_INTERVAL_MS);
-  }, [sendConvJSON]);
+  }, []);
 
   useEffect(() => {
+    startSendingAudioRef.current = startSendingAudio;
+  }, [startSendingAudio]);
+
+  // 2) Get mic and start recording only after WS is open and setup sent (match test room: stream then start in onopen)
+  useEffect(() => {
     if (!convConnected) return;
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         mediaStreamRef.current = stream;
-        if (hasSpeechRecognition && typeof (window as unknown as { SpeechRecognition?: new () => { continuous: boolean; interimResults: boolean; lang: string; onresult: ((e: { results: { length: number; [i: number]: { isFinal: boolean; 0: { transcript: string } } } }) => void) | null; start: () => void; stop: () => void } }).SpeechRecognition !== "undefined") {
-          const Recognition = (window as unknown as { SpeechRecognition: new () => { continuous: boolean; interimResults: boolean; lang: string; onresult: ((e: { results: { length: number; [i: number]: { isFinal: boolean; 0: { transcript: string } } } }) => void) | null; start: () => void; stop: () => void } }).SpeechRecognition;
-          const recognition = new Recognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-          recognition.lang = "en-US";
-          recognition.onresult = (event: { results: { length: number; [i: number]: { isFinal: boolean; 0: { transcript: string } } } }) => {
-            const last = event.results.length - 1;
-            const result = event.results[last];
-            const text = result?.[0]?.transcript?.trim();
-            if (text && sendConvJSON) sendConvJSON({ type: "text_transcript", text, is_final: result?.isFinal ?? true });
-          };
-          recognition.start();
-          recognitionRef.current = recognition;
+        if (USE_BROWSER_WEB_SPEECH && hasSpeechRecognition) {
+          const Recognition = (window as unknown as { SpeechRecognition?: new () => { continuous: boolean; interimResults: boolean; lang: string; onresult: ((e: unknown) => void) | null; start: () => void; stop: () => void } }).SpeechRecognition
+            || (window as unknown as { webkitSpeechRecognition?: new () => { continuous: boolean; interimResults: boolean; lang: string; onresult: ((e: unknown) => void) | null; start: () => void; stop: () => void } }).webkitSpeechRecognition;
+          if (Recognition) {
+            const recognition = new Recognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = "en-US";
+            recognition.onresult = (e: unknown) => {
+              const event = e as { results: { length: number; [i: number]: { isFinal: boolean; 0: { transcript: string } } } };
+              const last = event.results.length - 1;
+              const result = event.results[last];
+              const text = result?.[0]?.transcript?.trim();
+              if (text) {
+                const send = sendConvJSONRef.current;
+                if (send) send({ type: "text_transcript", text, is_final: result?.isFinal ?? true });
+              }
+            };
+            recognition.start();
+            recognitionRef.current = recognition;
+          }
         }
         startSendingAudio();
-      })
-      .catch(() => setErrors((prev) => [...prev.slice(-5), "Microphone access denied"]));
+      } catch {
+        if (!cancelled) setErrors((prev) => [...prev.slice(-5), "Microphone access denied"]);
+      }
+    };
+    run();
     return () => {
+      cancelled = true;
       if (chunkIntervalRef.current) clearTimeout(chunkIntervalRef.current);
       chunkIntervalRef.current = null;
       if (recorderRef.current?.state !== "inactive") recorderRef.current?.stop();
@@ -317,13 +440,18 @@ export function LiveWorkspace({
     stream?.getTracks().forEach((track) => track.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOn(false);
-    setStreaming(false);
   };
 
   useEffect(() => () => stopCamera(), []);
 
+  // When camera turns on, ensure sign-detection WebSocket is connected so we can stream frames
   useEffect(() => {
-    if (!streaming) {
+    if (cameraOn && !isConnected) connect();
+  }, [cameraOn, isConnected, connect]);
+
+  // Stream sign-detection frames whenever camera is on (no separate start button)
+  useEffect(() => {
+    if (!cameraOn) {
       if (frameTimerRef.current) window.clearInterval(frameTimerRef.current);
       frameTimerRef.current = null;
       return;
@@ -333,6 +461,7 @@ export function LiveWorkspace({
       if (!isConnected || !videoRef.current || !canvasRef.current) return;
       const width = videoRef.current.videoWidth || 640;
       const height = videoRef.current.videoHeight || 480;
+      if (width === 0 || height === 0) return;
       canvasRef.current.width = width;
       canvasRef.current.height = height;
       const ctx = canvasRef.current.getContext("2d");
@@ -346,14 +475,18 @@ export function LiveWorkspace({
       if (frameTimerRef.current) window.clearInterval(frameTimerRef.current);
       frameTimerRef.current = null;
     };
-  }, [isConnected, sendJSON, streaming]);
+  }, [cameraOn, isConnected, sendJSON]);
 
   const quickReplies = useMemo(() => {
     if (backendQuickReplies.length > 0) return backendQuickReplies.map((r) => r.label);
+    const hasDetectedInput = conversationTranscript.length > 0 || transcript.length > 0;
+    if (!hasDetectedInput) {
+      return ["Please continue", "Can you repeat that?", "I understand"];
+    }
     const bySign = REPLIES_BY_SIGN[latestSign.replace(/\s/g, "_")] || [];
     if (bySign.length > 0) return bySign;
     return ["Please continue", "Can you repeat that?", "I understand"];
-  }, [latestSign, backendQuickReplies]);
+  }, [latestSign, backendQuickReplies, conversationTranscript.length, transcript.length]);
 
   const getSpokenTextForReply = (label: string): string => {
     const fromBackend = backendQuickReplies.find((r) => r.label === label);
@@ -388,25 +521,6 @@ export function LiveWorkspace({
     setChatInput("");
   };
 
-  const voiceCommands: VoiceCommand[] = [
-    { phrases: ["camera on", "turn camera on"], action: () => startCamera() },
-    { phrases: ["camera off", "turn camera off"], action: () => stopCamera() },
-    { phrases: ["start streaming", "stream on"], action: () => setStreaming(true) },
-    { phrases: ["pause streaming", "stop streaming", "stream off"], action: () => setStreaming(false) },
-    { phrases: ["reconnect", "connect socket"], action: () => connect() },
-    { phrases: ["disconnect", "disconnect socket"], action: () => disconnect() },
-    { phrases: ["end session", "finish session"], action: () => endSession() },
-    { phrases: ["reply one", "first reply"], action: () => quickReplies[0] && sendReply(quickReplies[0]) },
-    { phrases: ["reply two", "second reply"], action: () => quickReplies[1] && sendReply(quickReplies[1]) },
-    { phrases: ["reply three", "third reply"], action: () => quickReplies[2] && sendReply(quickReplies[2]) },
-  ];
-
-  useVoiceCommands({
-    enabled: voiceEnabled,
-    commands: voiceCommands,
-    onHeard: (transcript) => setVoiceStatus(`Heard: ${transcript}`),
-  });
-
   const endSession = () => {
     stopCamera();
     disconnect();
@@ -439,13 +553,6 @@ export function LiveWorkspace({
           </Link>
           <button
             type="button"
-            onClick={() => setVoiceEnabled((prev) => !prev)}
-            className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200"
-          >
-            Voice: {voiceEnabled ? "On" : "Off"}
-          </button>
-          <button
-            type="button"
             onClick={endSession}
             className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400"
           >
@@ -453,7 +560,7 @@ export function LiveWorkspace({
           </button>
         </div>
       </header>
-      <p className="mb-4 text-sm text-slate-300">{voiceStatus}</p>
+      <p className="mb-4 text-sm text-slate-300">Voice commands: off in workspace (backend transcription active)</p>
 
       <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
@@ -465,14 +572,6 @@ export function LiveWorkspace({
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" onClick={cameraOn ? stopCamera : startCamera} className="rounded-lg border border-slate-500 px-4 py-2">
               {cameraOn ? "Turn camera off" : "Turn camera on"}
-            </button>
-            <button
-              type="button"
-              disabled={!cameraOn}
-              onClick={() => setStreaming((prev) => !prev)}
-              className="rounded-lg bg-cyan-400 px-4 py-2 font-semibold text-slate-950 disabled:opacity-70"
-            >
-              {streaming ? "Pause streaming" : "Start streaming"}
             </button>
             <button type="button" onClick={isConnected ? disconnect : connect} className="rounded-lg border border-slate-500 px-4 py-2">
               {isConnected ? "Disconnect socket" : "Reconnect socket"}
@@ -517,14 +616,22 @@ export function LiveWorkspace({
               : "Current interpretation"}
           </h2>
           <div className="mt-3 flex flex-wrap items-end gap-3">
-            <p className={`font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>{latestSign}</p>
-            <p className="text-slate-300">Confidence: {Math.round(confidence * 100)}%</p>
+            <p className={`font-semibold ${latestSign === NO_SIGN_YET ? "text-slate-500" : "text-cyan-300"} ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
+              {latestSign === NO_SIGN_YET ? "No sign yet" : latestSign}
+            </p>
+            <p className="text-slate-300">
+              {hasReceivedSign
+                ? `Confidence: ${Math.round(confidence * 100)}%`
+                : cameraOn && !isConnected
+                  ? "Connecting sign detection…"
+                  : "Turn camera on"}
+            </p>
           </div>
           {sentenceInProgress && <p className="mt-1 text-lg text-slate-400">{sentenceInProgress}</p>}
         </section>
 
         {showCaptionFeed && (
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+          <section className="max-h-[72vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
             <h2 className="text-2xl font-semibold text-slate-100">
               {profileId === "deaf" || profileId === "mute"
                 ? "Current interpretation (tone + captions)"
@@ -535,31 +642,52 @@ export function LiveWorkspace({
                 <p className={`mt-3 font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
                   {conversationTranscript[conversationTranscript.length - 1]?.text}
                 </p>
-                {lastConvTone && <p className="mt-2 text-amber-300">Tone: {lastConvTone}</p>}
+                {lastConvTone && (() => {
+                  const { emoji, label } = getToneDisplay(lastConvTone);
+                  return (
+                    <p className="mt-2 text-amber-300">
+                      {emoji} {label}
+                    </p>
+                  );
+                })()}
               </>
             ) : (
               <>
-                <p className={`mt-3 font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>{latestSign}</p>
-                <p className="mt-2 text-slate-300">Confidence: {Math.round(confidence * 100)}%</p>
+                <p className={`mt-3 font-semibold ${latestSign === NO_SIGN_YET ? "text-slate-500" : "text-cyan-300"} ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
+                  {latestSign === NO_SIGN_YET ? "No sign yet" : latestSign}
+                </p>
+                <p className="mt-2 text-slate-300">
+                  {hasReceivedSign ? `Confidence: ${Math.round(confidence * 100)}%` : cameraOn && !isConnected ? "Connecting sign detection…" : "Turn camera on"}
+                </p>
               </>
             )}
             {convStatus && <p className="mt-1 text-sm text-slate-400">Status: {convStatus}</p>}
             {showCaptionFeed && (
               <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
                 <h3 className="text-lg font-semibold text-slate-100">Caption stream</h3>
-                <p className="mt-2 text-sm text-slate-500">Sign (stub)</p>
-                {transcript.length > 0 && <p className="mt-1 text-slate-400">{transcript.join(" ")}</p>}
+                <p className="mt-2 text-sm text-slate-500">Sign (from camera)</p>
+                {transcript.length > 0 ? (
+                  <p className="mt-1 text-slate-400">{transcript.join(" ")}</p>
+                ) : hasReceivedSign ? (
+                  <p className="mt-1 text-slate-400">Current sign: {latestSign} ({Math.round(confidence * 100)}%)</p>
+                ) : cameraOn && !isConnected ? (
+                  <p className="mt-1 text-slate-400">Connecting sign detection…</p>
+                ) : (
+                  <p className="mt-1 text-slate-400">No sign yet. Turn camera on.</p>
+                )}
                 <p className="mt-3 text-sm text-slate-500">Conversation (transcript + tone)</p>
                 {conversationTranscript.length === 0 ? (
                   <p className="mt-1 text-slate-400">No speech yet. Speak to see captions.</p>
                 ) : (
                   <ul className="mt-1 space-y-1">
-                    {conversationTranscript.map((line, i) => (
-                      <li key={i} className="text-slate-200">
-                        {line.tone ? <span className="text-amber-300">[{line.tone}] </span> : null}
-                        {line.text}
-                      </li>
-                    ))}
+                    {conversationTranscript.map((line, i) => {
+                      const { emoji, label } = getToneDisplay(line.tone);
+                      return (
+                        <li key={i} className="text-slate-200">
+                          <span className="text-amber-300">{emoji} {label}</span> {line.text}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

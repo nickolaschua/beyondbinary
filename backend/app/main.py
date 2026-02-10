@@ -13,6 +13,7 @@ async def lifespan(app: FastAPI):
     print("SenseAI Backend starting...")
     print(f"   Environment: {settings.ENVIRONMENT}")
     print(f"   Groq API: {'OK' if settings.GROQ_API_KEY else 'MISSING'}")
+    print(f"   OpenAI API (Whisper STT): {'OK' if settings.OPENAI_API_KEY else 'MISSING'}")
     print(f"   Hume API: {'OK' if settings.HUME_API_KEY else 'MISSING'}")
     print(f"   ElevenLabs API: {'OK' if settings.ELEVENLABS_API_KEY else 'MISSING'}")
     print(f"   Anthropic API: {'OK' if settings.ANTHROPIC_API_KEY else 'MISSING'}")
@@ -47,12 +48,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routers import conversation, profile, sign_detection, tts
+from app.routers import braille, conversation, profile, sign_detection, tts
 
 app.include_router(conversation.router, tags=["Conversation"])
 app.include_router(tts.router, tags=["TTS"])
 app.include_router(profile.router, tags=["Profile"])
 app.include_router(sign_detection.router, tags=["Sign Detection"])
+app.include_router(braille.router)
 
 
 @app.get("/health")
@@ -61,6 +63,7 @@ async def health():
         "status": "ok",
         "services": {
             "groq": bool(settings.GROQ_API_KEY),
+            "openai": bool(settings.OPENAI_API_KEY),
             "hume": bool(settings.HUME_API_KEY),
             "elevenlabs": bool(settings.ELEVENLABS_API_KEY),
             "anthropic": bool(settings.ANTHROPIC_API_KEY),

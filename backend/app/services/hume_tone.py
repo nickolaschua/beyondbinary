@@ -4,6 +4,8 @@ Uses Hume's Expression Measurement streaming API to analyze the emotional
 content of speech. Returns 48 dimensions of prosody that we map to
 simplified labels for the frontend.
 
+Hume stream API limit: 5000ms per request. We truncate to last 5s if longer.
+
 When Hume is unavailable (API key missing, API change, etc.),
 the conversation router falls back to AFINN text sentiment.
 """
@@ -58,6 +60,12 @@ async def analyze_tone_from_audio(audio_bytes: bytes) -> dict:
         config = Config(prosody={})
         print(f"🎭 Hume: Client created with prosody config...")
 
+        # Hume limit: 5000ms. ~16KB/s for webm/opus → 5s ≈ 80KB
+        HUME_MAX_BYTES = 81_000
+        if len(audio_bytes) > HUME_MAX_BYTES:
+            audio_bytes = audio_bytes[-HUME_MAX_BYTES:]
+            print(f"🎭 Hume: Truncated to last 5s ({len(audio_bytes)} bytes)")
+
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
             f.write(audio_bytes)
             temp_path = f.name
@@ -86,11 +94,11 @@ async def analyze_tone_from_audio(audio_bytes: bytes) -> dict:
                 prosody_emotions = None
                 if result and hasattr(result, "prosody") and result.prosody:
                     print(f"🎭 Hume: Result has prosody data!")
-                    predictions = getattr(result.prosody, "predictions", [])
+                    predictions = getattr(result.prosody, "predictions", []) or []
                     print(f"🎭 Hume: {len(predictions)} prosody predictions found")
                     if predictions:
                         pred = predictions[0]
-                        emotions = getattr(pred, "emotions", [])
+                        emotions = getattr(pred, "emotions", []) or []
                         print(f"🎭 Hume: {len(emotions)} emotions detected")
                         if emotions:
                             emotion_dict = {e.name: e.score for e in emotions}

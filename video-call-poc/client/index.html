@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Call POC</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 20px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .videos {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .video-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      aspect-ratio: 16/9;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .video-label {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 12px 24px;
+      background: #007aff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    button:hover { background: #0056b3; }
+    button.disabled { background: #666; }
+    .captions-area {
+      background: rgba(0,0,0,0.8);
+      padding: 20px;
+      border-radius: 8px;
+      min-height: 120px;
+      max-height: 400px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .captions-rule {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.3);
+      margin: 8px 0;
+    }
+    .live-captions-header {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    #listening-indicator {
+      font-size: 14px;
+      opacity: 0.8;
+      margin: 8px 0;
+    }
+    #utterances-list {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 60px;
+    }
+    .utterance-block {
+      margin: 12px 0;
+    }
+    .utterance-tone {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 2px;
+    }
+    .utterance-text {
+      font-size: 18px;
+      line-height: 1.5;
+      color: #fff;
+    }
+    .live-caption {
+      font-size: 16px;
+      line-height: 1.5;
+      margin: 8px 0;
+      opacity: 0.85;
+    }
+    .live-caption.interim { font-style: italic; opacity: 0.7; }
+    .hidden { display: none !important; }
+    .tone-neutral { color: #fff; }
+    .tone-analyzing { color: #5ac8fa; }
+    .tone-happy { color: #4cd964; }
+    .tone-concerned { color: #ff9500; }
+    .tone-excited { color: #ff2d55; }
+    .speaker-local { color: #00d4ff; }
+    .speaker-remote { color: #ff69b4; }
+    .captions-header { margin-bottom: 8px; }
+    .mode-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .captions-area[data-mode="live"] .mode-badge { background: #34c759; color: #000; }
+    .captions-area[data-mode="offline"] .mode-badge { background: #ff3b30; color: #fff; }
+    .captions-area[data-mode="demo"] .mode-badge { background: #666; color: #fff; }
+    .braille-panel {
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .braille-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.7;
+      margin-bottom: 8px;
+    }
+    .braille-display {
+      font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+      font-size: 24px;
+      line-height: 1.6;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 2em;
+      color: #e8e8e8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 style="margin-bottom: 20px;">1-to-1 Video Call POC</h1>
+    
+    <div class="videos">
+      <div class="video-wrapper">
+        <video id="local-video" autoplay playsinline></video>
+        <div class="video-label">You</div>
+      </div>
+      <div class="video-wrapper">
+        <video id="remote-video" autoplay playsinline></video>
+        <div class="video-label">Remote</div>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button id="toggle-audio">Audio ON</button>
+      <button id="toggle-video">Video ON</button>
+    </div>
+    
+    <div class="captions-area" data-mode="demo">
+      <div class="captions-header">
+        <span id="captions-mode-badge" class="mode-badge">Demo</span>
+      </div>
+      <hr class="captions-rule">
+      <div class="live-captions-header">LIVE CAPTIONS</div>
+      <hr class="captions-rule">
+      <div id="listening-indicator" class="hidden">[ ● Listening… ]</div>
+      <div id="utterances-list"></div>
+      <div id="live-caption" class="live-caption hidden" aria-live="polite"></div>
+      <div class="braille-panel" aria-label="Braille display">
+        <div class="braille-label">Braille (UEB)</div>
+        <pre id="braille-display" class="braille-display"></pre>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -80,6 +80,8 @@ PORT = _safe_int("SENSEAI_PORT", 8001)
 CONFIDENCE_THRESHOLD = _safe_float("SENSEAI_CONFIDENCE_THRESHOLD", 0.7)
 STABILITY_WINDOW = _safe_int("SENSEAI_STABILITY_WINDOW", 8)
 
+SENTENCE_TIMEOUT = _safe_float("SENSEAI_SENTENCE_TIMEOUT", 2.0)
+
 CORS_ORIGINS: list[str] = [
     origin.strip()
     for origin in os.environ.get('SENSEAI_CORS_ORIGINS', '*').split(',')

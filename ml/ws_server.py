@@ -34,6 +34,7 @@ from utils import (
     MODEL_PATH,
     CONFIDENCE_THRESHOLD,
     STABILITY_WINDOW,
+    SENTENCE_TIMEOUT,
     HOST,
     PORT,
     CORS_ORIGINS,
@@ -149,6 +150,10 @@ async def sign_detection(websocket: WebSocket):
     frame_times = deque(maxlen=60)
     frames_processed = 0
 
+    # Sentence assembly state
+    sentence_buffer = []
+    last_sign_time = time.time()
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -232,6 +237,21 @@ async def sign_detection(websocket: WebSocket):
             if is_new_sign:
                 logger.info(f"New sign detected: {stability_result['sign']} ({confidence:.2f})")
 
+            # Sentence assembly
+            current_time = time.time()
+            if is_new_sign:
+                # Long pause since last sign → complete the previous sentence
+                if sentence_buffer and (current_time - last_sign_time) > SENTENCE_TIMEOUT:
+                    await websocket.send_json({
+                        "type": "sentence_complete",
+                        "sentence": " ".join(sentence_buffer),
+                    })
+                    logger.info(f"Sentence complete: {' '.join(sentence_buffer)}")
+                    sentence_buffer = []
+
+                sentence_buffer.append(stability_result["sign"])
+                last_sign_time = current_time
+
             await websocket.send_json({
                 "type": "sign_prediction",
                 "sign": predicted_sign,
@@ -242,6 +262,7 @@ async def sign_detection(websocket: WebSocket):
                 "all_predictions": all_predictions,
                 "frames_processed": frames_processed,
                 "total_inference_ms": total_inference_ms,
+                "sentence_in_progress": " ".join(sentence_buffer),
             })
 
     except WebSocketDisconnect:

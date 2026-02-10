@@ -7,11 +7,16 @@ Supports resume — skips sequences that already have data.
 
 Usage:
     python collect_data.py
+    python collect_data.py --actions Hello,Yes
+    python collect_data.py --num_sequences 5
 
 Press 'q' to quit at any time.
 """
 
+import argparse
 import os
+import sys
+
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -22,10 +27,52 @@ from utils import (
 )
 
 
-def create_directories():
+def parse_args(argv=None):
+    """Parse command-line arguments.
+
+    Args:
+        argv: Argument list (defaults to sys.argv[1:]).
+
+    Returns:
+        argparse.Namespace with .actions (list[str]), .num_sequences (int).
+    """
+    parser = argparse.ArgumentParser(description="SenseAI Data Collection")
+    parser.add_argument(
+        "--actions",
+        type=str,
+        default=None,
+        help="Comma-separated list of sign names to collect (default: all ACTIONS)",
+    )
+    parser.add_argument(
+        "--num_sequences",
+        type=int,
+        default=NUM_SEQUENCES,
+        help=f"Number of sequences to record per action (default: {NUM_SEQUENCES})",
+    )
+    args = parser.parse_args(argv)
+
+    if args.actions is None:
+        args.actions = list(ACTIONS)
+    else:
+        requested = [a.strip() for a in args.actions.split(",")]
+        valid = set(ACTIONS)
+        invalid = [a for a in requested if a not in valid]
+        if invalid:
+            parser.error(f"Invalid action(s): {', '.join(invalid)}. "
+                         f"Valid actions: {', '.join(ACTIONS)}")
+        args.actions = requested
+
+    return args
+
+
+def create_directories(actions=None, num_sequences=None):
     """Create MP_Data/{action}/{sequence}/ directory structure."""
-    for action in ACTIONS:
-        for sequence in range(NUM_SEQUENCES):
+    if actions is None:
+        actions = ACTIONS
+    if num_sequences is None:
+        num_sequences = NUM_SEQUENCES
+    for action in actions:
+        for sequence in range(num_sequences):
             dir_path = os.path.join(DATA_PATH, action, str(sequence))
             os.makedirs(dir_path, exist_ok=True)
 
@@ -36,7 +83,11 @@ def sequence_exists(action, sequence):
 
 
 def main():
-    create_directories()
+    args = parse_args()
+    actions = args.actions
+    num_sequences = args.num_sequences
+
+    create_directories(actions, num_sequences)
 
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -45,8 +96,8 @@ def main():
     mp_holistic = mp.solutions.holistic
     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
 
-        for action_idx, action in enumerate(ACTIONS):
-            for sequence in range(NUM_SEQUENCES):
+        for action_idx, action in enumerate(actions):
+            for sequence in range(num_sequences):
 
                 if sequence_exists(action, sequence):
                     print(f"  Skipping {action} sequence {sequence} (already recorded)")
@@ -91,9 +142,9 @@ def main():
                         cv2.destroyAllWindows()
                         return
 
-                total_seq = action_idx * NUM_SEQUENCES + sequence + 1
-                total_all = len(ACTIONS) * NUM_SEQUENCES
-                print(f"\u2713 Sequence {sequence + 1}/{NUM_SEQUENCES} recorded for '{action}' "
+                total_seq = action_idx * num_sequences + sequence + 1
+                total_all = len(actions) * num_sequences
+                print(f"\u2713 Sequence {sequence + 1}/{num_sequences} recorded for '{action}' "
                       f"({total_seq}/{total_all} total)")
 
             print(f"\n=== Completed all sequences for '{action}' ===\n")

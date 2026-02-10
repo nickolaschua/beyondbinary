@@ -11,6 +11,8 @@ Usage:
 Press 'q' to quit.
 """
 
+import argparse
+
 import cv2
 import numpy as np
 from collections import deque
@@ -28,6 +30,30 @@ from utils import (
     draw_landmarks,
     extract_keypoints,
 )
+
+
+def parse_args(argv=None):
+    """Parse command-line arguments for the realtime test script."""
+    parser = argparse.ArgumentParser(description="Real-time ASL sign detection from webcam.")
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default=MODEL_PATH,
+        help=f"Path to the trained model file (default: {MODEL_PATH})",
+    )
+    parser.add_argument(
+        "--confidence",
+        type=float,
+        default=CONFIDENCE_THRESHOLD,
+        help=f"Minimum confidence threshold (default: {CONFIDENCE_THRESHOLD})",
+    )
+    parser.add_argument(
+        "--window",
+        type=int,
+        default=STABILITY_WINDOW,
+        help=f"Stability window size (default: {STABILITY_WINDOW})",
+    )
+    return parser.parse_args(argv)
 
 # --- Configuration ---
 MAX_SENTENCE_LENGTH = 5       # last N signs displayed
@@ -91,9 +117,11 @@ def draw_sentence_bar(frame, sentence):
 
 
 def main():
+    args = parse_args()
+
     # Load model
-    print(f"Loading model from {MODEL_PATH}...")
-    model = tf.keras.models.load_model(MODEL_PATH)
+    print(f"Loading model from {args.model_path}...")
+    model = tf.keras.models.load_model(args.model_path)
     print(f"Model loaded. Actions: {list(ACTIONS)}")
 
     # Initialize MediaPipe Holistic
@@ -104,7 +132,7 @@ def main():
     keypoint_buffer = deque(maxlen=SEQUENCE_LENGTH)
 
     # Stability filter
-    stability_filter = StabilityFilter(window_size=STABILITY_WINDOW, threshold=CONFIDENCE_THRESHOLD)
+    stability_filter = StabilityFilter(window_size=args.window, threshold=args.confidence)
 
     # Detected sentence
     sentence = []

@@ -13,6 +13,9 @@ Frontend message format:
     { "type": "start_listening" }
     { "type": "stop_listening" }
     { "type": "set_profile", "profile_type": "deaf" | "blind" }
+    { "type": "set_room", "room": "room_id" }
+    { "type": "set_tts_preference", "value": true|false }  # recipient wants TTS for incoming chat
+    { "type": "chat_message", "room": "room_id", "sender": "local"|"remote", "text": "...", "tts": true|false }
 
 Backend response format:
     { "type": "transcript", "text": "...", "tone": "analyzing...", "tone_category": "neutral" }  // Sent immediately (~500ms)
@@ -21,6 +24,10 @@ Backend response format:
     { "type": "summary", "text": "..." }  // for blind profile
     { "type": "status", "message": "listening" | "processing" | "idle" }
     { "type": "error", "message": "..." }
+    { "type": "chat_message", "room": "...", "sender": "remote", "text": "...", "tts": true|false }
+    { "type": "tts_audio_chunk", "audio_base64": "..." }
+    { "type": "tts_audio_end" }
+    { "type": "tts_error", "message": "..." }
 """
 
 import asyncio
@@ -38,8 +45,47 @@ from app.services.hume_tone import analyze_tone_from_audio
 from app.services.tone_mapper import get_tone_category
 from app.services.prosody_buffer import ProsodyBuffer
 from app.services.tone_aggregator import ToneAggregator, ToneSample
+from app.services.elevenlabs_tts import text_to_speech_stream
 
 router = APIRouter()
+
+# In-memory room registry: room_id -> list of conn_info dicts.
+# Each conn_info: {"ws": WebSocket, "profile_type": str, "wants_tts": bool}
+# Updated on set_profile, set_room, set_tts_preference.
+_room_registry: dict[str, list[dict]] = {}
+
+
+def _remove_conn_from_room(conn_info: dict, room_id: str | None) -> None:
+    if not room_id or room_id not in _room_registry:
+        return
+    lst = _room_registry[room_id]
+    for i, c in enumerate(lst):
+        if c is conn_info:
+            lst.pop(i)
+            break
+    if not lst:
+        del _room_registry[room_id]
+
+
+async def _stream_tts_to_ws(websocket: WebSocket, text: str) -> None:
+    """Run ElevenLabs TTS stream and send chunks to one client. Non-blocking; catches errors."""
+    try:
+        # Run sync generator in thread to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        chunks = await loop.run_in_executor(
+            None, lambda: list(text_to_speech_stream(text))
+        )
+        for chunk in chunks:
+            if chunk:
+                b64 = base64.b64encode(chunk).decode("ascii")
+                await websocket.send_json({"type": "tts_audio_chunk", "audio_base64": b64})
+        await websocket.send_json({"type": "tts_audio_end"})
+    except Exception as e:
+        print(f"TTS stream error: {e}")
+        try:
+            await websocket.send_json({"type": "tts_error", "message": "TTS unavailable"})
+        except Exception:
+            pass
 
 
 @router.websocket("/ws/conversation")
@@ -47,8 +93,10 @@ async def conversation_ws(websocket: WebSocket):
     await websocket.accept()
     print(f"Conversation WS: client connected ({websocket.client})")
 
-    # Per-connection state
+    # Per-connection state; conn_info is shared with room registry for profile_type and fan-out
     profile_type = "deaf"
+    conn_info: dict = {"ws": websocket, "profile_type": profile_type, "wants_tts": False}
+    room_id: str | None = None
     conversation_history = ""
     is_listening = False
     last_utterance_id: str | None = None
@@ -134,7 +182,59 @@ async def conversation_ws(websocket: WebSocket):
 
             if msg_type == "set_profile":
                 profile_type = message.get("profile_type", "deaf")
+                conn_info["profile_type"] = profile_type
                 await websocket.send_json({"type": "status", "message": f"profile_set:{profile_type}"})
+                continue
+
+            if msg_type == "set_room":
+                new_room = (message.get("room") or "").strip()
+                if not new_room:
+                    continue
+                _remove_conn_from_room(conn_info, room_id)
+                room_id = new_room
+                if room_id not in _room_registry:
+                    _room_registry[room_id] = []
+                _room_registry[room_id].append(conn_info)
+                await websocket.send_json({"type": "status", "message": f"room_set:{room_id}"})
+                continue
+
+            if msg_type == "set_tts_preference":
+                conn_info["wants_tts"] = bool(message.get("value", False))
+                continue
+
+            if msg_type == "chat_message":
+                text = (message.get("text") or "").strip()
+                sender = message.get("sender", "local")
+                want_tts = message.get("tts", False)
+                if not text or sender not in ("local", "remote"):
+                    continue
+                if not room_id:
+                    continue
+                # Append to this connection's conversation history
+                conversation_history += f"\n[chat] {sender}: {text}"
+                if len(conversation_history) > 2000:
+                    conversation_history = conversation_history[-1500:]
+                # Fan-out to other connections in the same room
+                peers = _room_registry.get(room_id, [])
+                for peer in peers:
+                    if peer["ws"] is websocket:
+                        continue
+                    recv_profile = peer.get("profile_type", "deaf")
+                    recv_wants_tts = peer.get("wants_tts", False)
+                    tts_for_peer = want_tts or (recv_profile == "blind") or recv_wants_tts
+                    try:
+                        await peer["ws"].send_json({
+                            "type": "chat_message",
+                            "room": room_id,
+                            "sender": "remote",
+                            "text": text,
+                            "tts": tts_for_peer,
+                        })
+                    except Exception:
+                        continue
+                    if tts_for_peer:
+                        print(f"Chat TTS: streaming to peer (wants_tts={recv_wants_tts}, blind={recv_profile == 'blind'})")
+                        asyncio.create_task(_stream_tts_to_ws(peer["ws"], text))
                 continue
 
             if msg_type == "start_listening":
@@ -422,6 +522,6 @@ async def conversation_ws(websocket: WebSocket):
         except Exception:
             pass
     finally:
-        # Cleanup: Stop prosody buffer and cancel background tasks
+        _remove_conn_from_room(conn_info, room_id)
         await prosody_buffer.stop()
         print(f"Conversation WS: cleanup complete")

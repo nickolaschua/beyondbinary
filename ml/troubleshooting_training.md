@@ -44,6 +44,46 @@ Dense(10, softmax)
 | Training Time (Colab T4) | <5 min | 5-10 min | >10 min (check GPU) |
 | Epochs to Converge | 50-100 | 100-150 | >150 (data issue) |
 
+## Data Augmentation
+
+The training script now includes built-in augmentation (`--augment` flag, default: 5x multiplier).
+This is **critical** when training on limited webcam data (30 sequences per sign).
+
+### What augmentation does
+
+| Technique | Effect | Why it helps |
+|-----------|--------|-------------|
+| Gaussian noise | Adds small random perturbations to keypoint values | Simulates MediaPipe tracking jitter between frames |
+| Temporal shift | Shifts frame window by 1-3 frames | Handles timing variation in when a sign starts |
+| Speed variation | Stretches/compresses the timeline by 15% | Different people sign at different speeds |
+| Frame dropout | Replaces random frames with previous frame | Builds robustness to webcam frame drops |
+| L/R mirror | Swaps left and right hand keypoints | Doubles data; some signs work with either hand |
+
+### Recommended settings
+
+| Data quality | Multiplier | Mirror | Expected result |
+|-------------|------------|--------|-----------------|
+| Good (>20 hands/sign) | 5 (default) | Yes | 270 -> 3,240 samples |
+| Moderate (15-20 hands/sign) | 8 | Yes | 270 -> 4,860 samples |
+| Poor (<15 hands/sign) | Re-record first | - | Fix data before augmenting |
+
+### CLI usage
+
+```bash
+python train_model.py                          # Default: 5x augmentation + mirror
+python train_model.py --augment 8              # More augmentation for sparse data
+python train_model.py --augment 0              # Disable augmentation (raw data only)
+python train_model.py --augment 5 --no_mirror  # Augmentation without L/R swap
+```
+
+### Colab usage
+
+In Cell 5b of the training notebook, set:
+```python
+AUGMENT_MULTIPLIER = 5   # or 8 for more augmentation
+USE_MIRROR = True        # set False to disable mirroring
+```
+
 ## Hyperparameter Tuning Guide
 
 If the default settings are not working well:

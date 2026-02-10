@@ -152,7 +152,9 @@ def extract_keypoints(results):
         [[res.x, res.y, res.z] for res in results.right_hand_landmarks.landmark]
     ).flatten() if results.right_hand_landmarks else np.zeros(21 * 3)
 
-    return np.concatenate([pose, face, lh, rh])
+    result = np.concatenate([pose, face, lh, rh])
+    assert result.shape == (1662,), f"extract_keypoints produced shape {result.shape}, expected (1662,)"
+    return result
 
 
 # ========================

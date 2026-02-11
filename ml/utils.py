@@ -22,17 +22,22 @@ import numpy as np
 # SHARED CONSTANTS
 # ========================
 
-ACTIONS = np.array([
-    'Hello', 'Thank_You', 'Help', 'Yes', 'No',
-    'Please', 'Sorry', 'I_Love_You', 'Stop', 'More'
-])
+_ML_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_ACTIONS_PATH = os.path.join(_ML_DIR, 'models', 'actions.npy')
+if os.path.isfile(_ACTIONS_PATH):
+    ACTIONS = np.load(_ACTIONS_PATH)
+else:
+    ACTIONS = np.array(['Hello', 'Thank_You', 'Help', 'Yes', 'No',
+                        'Please', 'Sorry', 'I_Love_You', 'Stop', 'More',
+                        'How_Are_You', 'Good'])
 
 SEQUENCE_LENGTH = 30
-NUM_SEQUENCES = 30
-_ML_DIR = os.path.dirname(os.path.abspath(__file__))
+NUM_SEQUENCES = 90
 
 DATA_PATH = os.path.join(_ML_DIR, 'MP_Data')
 MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.h5')
+TFLITE_MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.tflite')
 
 # --- Safe env var parsing helpers ---
 
@@ -77,14 +82,17 @@ def _safe_float(env_key: str, default: float) -> float:
 # --- Server / runtime configuration (overridable via environment variables) ---
 HOST = os.environ.get("SENSEAI_HOST", "0.0.0.0")
 PORT = _safe_int("SENSEAI_PORT", 8001)
-CONFIDENCE_THRESHOLD = _safe_float("SENSEAI_CONFIDENCE_THRESHOLD", 0.7)
-STABILITY_WINDOW = _safe_int("SENSEAI_STABILITY_WINDOW", 8)
+CONFIDENCE_THRESHOLD = _safe_float("SENSEAI_CONFIDENCE_THRESHOLD", 0.5)
+STABILITY_WINDOW = _safe_int("SENSEAI_STABILITY_WINDOW", 5)
 
 SENTENCE_TIMEOUT = _safe_float("SENSEAI_SENTENCE_TIMEOUT", 2.0)
 
 CORS_ORIGINS: list[str] = [
     origin.strip()
-    for origin in os.environ.get('SENSEAI_CORS_ORIGINS', '*').split(',')
+    for origin in os.environ.get(
+        'SENSEAI_CORS_ORIGINS',
+        'http://localhost:3000,http://127.0.0.1:3000',
+    ).split(',')
     if origin.strip()
 ]
 
@@ -205,6 +213,81 @@ def extract_keypoints(results: Any) -> np.ndarray:
     result = np.concatenate([pose, face, lh, rh])
     assert result.shape == (1662,), f"extract_keypoints produced shape {result.shape}, expected (1662,)"
     return result
+
+
+# ========================
+# KEYPOINT PREPROCESSING
+# ========================
+
+# Features after face stripping: pose(132) + lh(63) + rh(63)
+NUM_FEATURES = 258
+
+
+def strip_face_features(keypoints: np.ndarray) -> np.ndarray:
+    """Strip face landmarks from a 1662-feature vector, returning 258 features.
+
+    Layout: [pose 0:132, face 132:1536, lh 1536:1599, rh 1599:1662]
+    Output: [pose(132), lh(63), rh(63)]
+
+    Args:
+        keypoints: Flat array of shape (1662,)
+
+    Returns:
+        np.ndarray: Flat array of shape (258,)
+    """
+    pose = keypoints[:132]
+    lh = keypoints[1536:1599]
+    rh = keypoints[1599:1662]
+    return np.concatenate([pose, lh, rh])
+
+
+def normalize_frame(frame: np.ndarray) -> np.ndarray:
+    """Normalize a 258-feature frame: center on nose, scale by shoulder width.
+
+    Makes the model position- and scale-invariant so signer location
+    in the camera frame doesn't affect predictions.
+
+    Args:
+        frame: Flat array of shape (258,) — [pose(132), lh(63), rh(63)]
+
+    Returns:
+        np.ndarray: Normalized flat array of shape (258,)
+    """
+    pose = frame[:132].reshape(33, 4)
+    lh = frame[132:195].reshape(21, 3)
+    rh = frame[195:258].reshape(21, 3)
+
+    anchor = pose[0, :3]  # nose xyz
+
+    # Center pose xyz (leave visibility alone)
+    pose[:, :3] -= anchor
+    # Center hands
+    lh -= anchor
+    rh -= anchor
+
+    # Scale by shoulder width for size invariance
+    l_shoulder = pose[11, :3]
+    r_shoulder = pose[12, :3]
+    scale = np.linalg.norm(l_shoulder - r_shoulder)
+    if scale > 1e-6:
+        pose[:, :3] /= scale
+        lh /= scale
+        rh /= scale
+
+    return np.concatenate([pose.flatten(), lh.flatten(), rh.flatten()])
+
+
+def prepare_keypoints(keypoints: np.ndarray) -> np.ndarray:
+    """Full preprocessing: strip face features and normalize landmarks.
+
+    Args:
+        keypoints: Raw 1662-feature vector from extract_keypoints().
+
+    Returns:
+        np.ndarray: Preprocessed 258-feature vector ready for the model.
+    """
+    stripped = strip_face_features(keypoints)
+    return normalize_frame(stripped)
 
 
 # ========================

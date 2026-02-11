@@ -4,97 +4,123 @@
 
 ## APIs & External Services
 
-**Anthropic Claude API:**
-- Purpose: Autonomous task implementation via Ralph loop
-- Tool: `@anthropic-ai/claude-code` CLI (installed globally in Docker)
-- Auth: API key in `ANTHROPIC_API_KEY` env var (`.env` file, gitignored)
-- Usage: `scripts/ralph/ralph.sh` spawns `claude --dangerously-skip-permissions --print`
-- Required for: Ralph autonomous loop only (not for ML inference)
+**Speech-to-Text (STT):**
+- Groq Whisper API - Fast transcription via Whisper Large v3 Turbo
+  - SDK/Client: `groq` SDK 1.0.0
+  - Auth: `GROQ_API_KEY` env var
+  - File: `backend/app/services/groq_stt.py`
+  - Supported formats: webm, mp4, m4a, wav, mp3
 
-**Payment Processing:** Not integrated
-**Email/SMS:** Not integrated
-**Analytics/Monitoring:** Not integrated
+- OpenAI Whisper API - Alternative STT provider (drop-in replacement)
+  - SDK/Client: `openai` SDK >=1.0.0
+  - Auth: `OPENAI_API_KEY` env var
+  - File: `backend/app/services/openai_stt.py`
+
+**Text-to-Speech (TTS):**
+- ElevenLabs API - Natural speech synthesis
+  - SDK/Client: `elevenlabs` SDK
+  - Auth: `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` env vars
+  - File: `backend/app/services/elevenlabs_tts.py`
+  - Model: `eleven_multilingual_v2`, streaming + batch modes
+
+**Tone/Emotion Analysis:**
+- Hume AI Expression Measurement API - Prosody/emotion from audio
+  - SDK/Client: `hume` SDK 0.13.6
+  - Auth: `HUME_API_KEY` env var
+  - File: `backend/app/services/hume_tone.py`
+  - Returns 48 emotion dimensions, 5000ms limit per request
+  - Fallback: AFINN text sentiment (`backend/app/services/afinn_fallback.py`)
+
+**Large Language Models:**
+- Groq Llama 3.3 70B - Jargon simplification, quick-reply generation
+  - SDK/Client: `groq` SDK (shared with STT)
+  - Auth: `GROQ_API_KEY` env var
+  - File: `backend/app/services/claude_intelligence.py`
+  - Model: `llama-3.3-70b-versatile`, JSON output forcing
+
+- Anthropic Claude - Reserved for advanced processing
+  - SDK/Client: `anthropic` SDK 0.79.0
+  - Auth: `ANTHROPIC_API_KEY` env var
+  - Config: `backend/app/config.py` (configured but not actively called)
 
 ## Data Storage
 
-**Databases:** Not integrated
-- All data persisted as NumPy `.npy` files in `ml/MP_Data/`
-- No SQL or NoSQL database
+**Databases:**
+- None - In-memory only (`backend/app/routers/profile.py` line 13: `_profiles = {}`)
 
 **File Storage:**
-- Local filesystem only
-- Training data: `ml/MP_Data/{action}/{sequence}/{frame}.npy`
-- Model artifacts: `ml/models/action_model.h5`
-- No cloud storage (S3, GCS, etc.)
+- Local filesystem only - ML training data in `ml/MP_Data/`, model artifacts in `ml/models/`
 
-**Caching:** Not integrated
+**Caching:**
+- None currently
 
 ## Authentication & Identity
 
-**Auth Provider:** Not integrated
-- No user authentication system
-- Local-only execution model
+**Auth Provider:**
+- None - No user authentication system
+- Optional API key for ML WebSocket (`ml/ws_server.py`, query parameter)
 
-**OAuth Integrations:** None
+**OAuth Integrations:**
+- Not detected
 
 ## Monitoring & Observability
 
-**Error Tracking:** Not integrated (no Sentry, etc.)
+**Error Tracking:**
+- Not detected (no Sentry or equivalent)
 
-**Analytics:** Not integrated
+**Analytics:**
+- Not detected
 
 **Logs:**
-- Python `logging` module to stdout (`ml/ws_server.py`)
-- Format: `%(asctime)s [%(levelname)s] %(message)s`
-- Ralph loop logs to `logs/ralph-YYYYMMDD.log`
-- No external log aggregation service
+- ML service: Python `logging` module (`ml/ws_server.py`)
+- Backend: `print()` statements (no structured logging)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Local development via Python venv + Uvicorn
-- Docker Compose for Ralph autonomous loop
-- No cloud hosting configured
+- Railway - Backend deployment (`backend/Procfile`, `backend/railway.toml`)
+- Docker - Ralph automation loop (`Dockerfile`, `docker-compose.yml`)
 
 **CI Pipeline:**
-- `vendor/ralph-loop/.github/workflows/deploy.yml` (in vendored repo only)
-- No CI pipeline for main project
+- Not detected (no `.github/workflows/` found)
 
 ## Environment Configuration
 
 **Development:**
-- Required env vars: None for ML pipeline (all have defaults)
-- Optional: `SENSEAI_HOST`, `SENSEAI_PORT`, `SENSEAI_CONFIDENCE_THRESHOLD`, `SENSEAI_STABILITY_WINDOW`
-- Secrets location: `.env` file (gitignored)
-- No mock/stub services needed (all on-device inference)
-
-**Ralph Loop (Docker):**
-- Required: `ANTHROPIC_API_KEY` in `.env`
-- Optional: `RALPH_ITERATIONS` (default: 20)
-- Docker Compose loads env from `.env` file
+- Required env vars: `GROQ_API_KEY`, `HUME_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
+- Secrets location: `.env` files (gitignored), template at `backend/.env.example`
+- ML module: No `.env.example` (env vars documented in `ml/utils.py` lines 78-91)
 
 **Production:**
-- No production deployment configured
-- Server runs via: `uvicorn ws_server:app --host 0.0.0.0 --port 8001`
+- Secrets management: Railway environment variables (backend)
+- CORS: Wildcard `["*"]` default; set `FRONTEND_ORIGIN` for production
 
-## Webhooks & Callbacks
+## WebSocket Protocols
 
-**Incoming:** None
-**Outgoing:** None
+**Conversation Intelligence:**
+- Endpoint: `/ws/conversation` (Backend FastAPI)
+- File: `backend/app/routers/conversation.py`
+- Protocol: Audio chunks (base64) in, transcripts/tone/simplified text/TTS audio out
+- Documentation: `docs/WEBSOCKET.md`
 
-## On-Device Libraries (No External API Calls)
+**Sign Detection:**
+- Endpoint: `/ws/sign-detection` (ML FastAPI)
+- File: `ml/ws_server.py`
+- Protocol: Base64 JPEG frames in, sign predictions + confidence out
+- Auth: Optional API key via query parameter
 
-**MediaPipe** - Computer vision (on-device, no cloud)
-- Pose/face/hand detection via `mp.solutions.holistic`
-- Integration: `ml/utils.py` (mediapipe_detection, extract_keypoints)
+## API Routes
 
-**TensorFlow** - Deep learning (on-device inference)
-- LSTM model loaded at server startup
-- Integration: `ml/ws_server.py` (lifespan context manager)
+**Backend REST:**
+- `POST /api/tts` - Text-to-speech (`backend/app/routers/tts.py`)
+- `POST /api/profile` - Create profile (`backend/app/routers/profile.py`)
+- `GET /api/profile/{user_name}` - Get profile (`backend/app/routers/profile.py`)
+- `GET /braille/display` - Braille translation (`backend/app/routers/braille.py`)
+- `GET /health` - Health check (`backend/app/main.py`)
 
-**OpenCV** - Image processing (on-device)
-- Webcam capture and frame decoding
-- Integration: `ml/collect_data.py`, `ml/ws_server.py`
+**Frontend API Client:**
+- `senseai-frontend/src/lib/api.ts` - HTTP wrappers (checkBackendHealth, postTts, createProfile, getProfile)
+- `senseai-frontend/src/lib/constants.ts` - API_URL (`http://localhost:8001`), WS_URL (`ws://localhost:8001`)
 
 ---
 

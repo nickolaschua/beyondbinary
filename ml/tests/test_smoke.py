@@ -11,9 +11,9 @@ import numpy as np
 from utils import ACTIONS, extract_keypoints
 
 
-def test_actions_has_10_items():
-    """ACTIONS array must contain exactly 10 ASL signs."""
-    assert len(ACTIONS) == 10
+def test_actions_has_12_items():
+    """ACTIONS array must contain exactly 12 ASL signs."""
+    assert len(ACTIONS) == 12
 
 
 def test_actions_are_strings():

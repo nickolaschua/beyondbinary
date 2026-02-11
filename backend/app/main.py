@@ -29,7 +29,11 @@ app = FastAPI(
 )
 
 # CORS — phone compatibility: allow mobile PWA origins
-_origins = ["*"]
+_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+]
 if settings.FRONTEND_ORIGIN:
     _origins = [
         settings.FRONTEND_ORIGIN,

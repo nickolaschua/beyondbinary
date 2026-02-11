@@ -10,7 +10,7 @@ def test_learning_rate_default():
 
     with patch("sys.argv", ["train_model.py"]):
         args = parse_args()
-    assert args.learning_rate == pytest.approx(0.001)
+    assert args.learning_rate == pytest.approx(0.0003)
 
 
 def test_learning_rate_custom():

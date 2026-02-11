@@ -28,11 +28,11 @@ class TestConfigDefaults:
 
     def test_confidence_threshold_default(self):
         from utils import CONFIDENCE_THRESHOLD
-        assert CONFIDENCE_THRESHOLD == 0.7
+        assert CONFIDENCE_THRESHOLD == 0.5
 
     def test_stability_window_default(self):
         from utils import STABILITY_WINDOW
-        assert STABILITY_WINDOW == 8
+        assert STABILITY_WINDOW == 5
 
     def test_model_path_is_absolute(self):
         from utils import MODEL_PATH
@@ -103,7 +103,7 @@ class TestConfigInvalidEnvVars:
         import importlib
         import utils
         importlib.reload(utils)
-        assert utils.CONFIDENCE_THRESHOLD == 0.7
+        assert utils.CONFIDENCE_THRESHOLD == 0.5
 
     def test_invalid_stability_window_falls_back_to_default(self, monkeypatch):
         """Non-numeric SENSEAI_STABILITY_WINDOW should fall back to 8."""
@@ -111,7 +111,7 @@ class TestConfigInvalidEnvVars:
         import importlib
         import utils
         importlib.reload(utils)
-        assert utils.STABILITY_WINDOW == 8
+        assert utils.STABILITY_WINDOW == 5
 
     def test_empty_port_falls_back_to_default(self, monkeypatch):
         """Empty string SENSEAI_PORT should fall back to 8001."""
@@ -150,12 +150,12 @@ class TestConfigInvalidEnvVars:
 class TestCorsOriginsConfig:
     """Verify CORS_ORIGINS is configurable via SENSEAI_CORS_ORIGINS."""
 
-    def test_cors_origins_default_is_wildcard(self):
-        """Default (no env var) should produce ['*']."""
+    def test_cors_origins_default(self):
+        """Default (no env var) should produce localhost origins."""
         import importlib
         import utils
         importlib.reload(utils)
-        assert utils.CORS_ORIGINS == ['*']
+        assert utils.CORS_ORIGINS == ['http://localhost:3000', 'http://127.0.0.1:3000']
 
     def test_cors_origins_single_origin(self, monkeypatch):
         """Single origin should produce a one-element list."""

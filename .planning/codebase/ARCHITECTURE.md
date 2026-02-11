@@ -4,164 +4,186 @@
 
 ## Pattern Overview
 
-**Overall:** Monolithic ML Pipeline + Autonomous AI Agent Orchestration (Hybrid)
+**Overall:** Event-Driven WebSocket Hub with Specialized Microservices
 
 **Key Characteristics:**
-- Single-purpose ML pipeline for ASL sign detection (data collection -> training -> inference)
-- On-device inference (no cloud ML services)
-- Real-time WebSocket server for browser-based sign detection
-- Autonomous Ralph loop for unattended development task completion
-- All ML modules share constants/utilities via single hub (`ml/utils.py`)
+- Three independent services (Frontend, Backend API, ML Service) communicating via WebSocket/REST
+- Real-time bidirectional WebSocket for low-latency accessibility features
+- Profile-driven rendering: same backend serves Deaf, Blind, DeafBlind, and Mute users
+- External AI API orchestration (Groq, Hume, ElevenLabs, OpenAI)
 
 ## Layers
 
-**Data Acquisition Layer:**
-- Purpose: Capture webcam video, extract pose/hand/face landmarks, persist as structured data
-- Contains: Data collection scripts, verification tools
-- Key files: `ml/collect_data.py`, `ml/verify_data.py`
-- Depends on: Shared utilities layer, MediaPipe, OpenCV, NumPy
-- Used by: Training layer (consumes saved `.npy` files)
+**Frontend - Presentation Layer (`senseai-frontend/src/app/`):**
+- Purpose: Profile-specific user interfaces with real-time updates
+- Contains: Page components for each profile type (deaf, blind, deafblind, mute)
+- Depends on: WebSocket hooks, utility libraries, backend API
+- Used by: End users via browser
 
-**Shared Utilities Layer:**
-- Purpose: Central hub of constants, functions, and abstractions used by all ML scripts
-- Contains: Constants (ACTIONS, SEQUENCE_LENGTH), detection functions, keypoint extraction, StabilityFilter
-- Key files: `ml/utils.py`
-- Depends on: MediaPipe, TensorFlow, NumPy, OpenCV
-- Used by: All other ML layers
+**Frontend - Component Layer (`senseai-frontend/src/components/`):**
+- Purpose: Reusable UI components
+- Contains: LiveWorkspace, BrailleCell, AudioAssistButton, AccessibilityBoot, ToggleSwitch
+- Depends on: Hooks layer, lib utilities
+- Used by: Page components
 
-**Training Layer:**
-- Purpose: Load keypoint sequences, build LSTM classifier, train, evaluate, save model
-- Contains: Data loading, model architecture definition, training loop, evaluation metrics
-- Key files: `ml/train_model.py`
-- Depends on: Shared utilities layer, TensorFlow, scikit-learn, matplotlib
-- Used by: Inference layer (consumes trained model)
+**Frontend - Hook Layer (`senseai-frontend/src/hooks/`):**
+- Purpose: State management and side-effect encapsulation
+- Contains: useWebSocket (auto-reconnect), usePageAudioGuide, useVoiceCommands
+- Depends on: Browser APIs, WebSocket protocol
+- Used by: Components
 
-**Inference Layer (WebSocket Server):**
-- Purpose: Real-time frame-by-frame ASL sign prediction with <200ms latency target
-- Contains: FastAPI app, WebSocket endpoint, frame decoding, per-connection state
-- Key files: `ml/ws_server.py`
-- Depends on: Shared utilities layer, FastAPI, TensorFlow, MediaPipe, OpenCV
-- Used by: Browser clients via WebSocket
+**Frontend - Utility Layer (`senseai-frontend/src/lib/`):**
+- Purpose: API clients, constants, helpers
+- Contains: api.ts, constants.ts, profile.ts, session.ts, tts.ts, accessibility.ts
+- Depends on: Backend REST endpoints
+- Used by: Hooks, components
 
-**Testing Layer:**
-- Purpose: Automated test suite enabling CI/CD without GPU/webcam/MediaPipe runtime
-- Contains: pytest fixtures, mock MediaPipe results, unit and integration tests
-- Key files: `ml/conftest.py`, `ml/tests/conftest.py`, `ml/tests/test_*.py` (21 files)
-- Depends on: Shared utilities layer (after mocking), pytest
-- Used by: Ralph verification gate, manual development
+**Backend - Router/Controller Layer (`backend/app/routers/`):**
+- Purpose: HTTP/WebSocket endpoint definitions
+- Contains: conversation.py, tts.py, profile.py, sign_detection.py, braille.py
+- Depends on: Service layer for business logic
+- Used by: Frontend via HTTP/WebSocket
 
-**Orchestration Layer (Ralph Loop):**
-- Purpose: Autonomous AI agent loop that iteratively completes development tasks
-- Contains: Bash loop script, Claude prompt templates, Docker configuration
-- Key files: `scripts/ralph/ralph.sh`, `scripts/ralph/CLAUDE*.md`, `Dockerfile`, `docker-compose.yml`
-- Depends on: Claude Code CLI, pytest (verification gate)
-- Used by: Developers via `make ralph-once` or `make ralph-afk`
+**Backend - Service Layer (`backend/app/services/`):**
+- Purpose: Business logic and external API integration
+- Contains: groq_stt.py, openai_stt.py, hume_tone.py, elevenlabs_tts.py, claude_intelligence.py, tone_aggregator.py, tone_mapper.py, prosody_buffer.py, braille_ueb.py, afinn_fallback.py
+- Depends on: External AI APIs, config
+- Used by: Router layer
+
+**Backend - Model Layer (`backend/app/models/`):**
+- Purpose: Request/response validation
+- Contains: schemas.py (Pydantic models: ProfileCreate, TTSRequest, ProfileResponse)
+- Depends on: Pydantic
+- Used by: Router layer
+
+**ML - WebSocket Handler (`ml/ws_server.py`):**
+- Purpose: Real-time sign language detection server
+- Contains: Frame reception, inference pipeline, stability filtering
+- Depends on: Utils layer, TensorFlow model
+- Used by: Frontend via WebSocket
+
+**ML - Inference Pipeline (`ml/utils.py`):**
+- Purpose: Shared constants, MediaPipe extraction, model loading, stability filter
+- Contains: extract_keypoints(), StabilityFilter, load_model(), ACTIONS, SEQUENCE_LENGTH
+- Depends on: TensorFlow, MediaPipe, NumPy
+- Used by: WebSocket handler, training scripts
 
 ## Data Flow
 
-**ML Pipeline (Collect -> Train -> Serve):**
+**Sign Detection Flow (Real-time):**
 
-1. Data Collection: Webcam -> MediaPipe Holistic -> extract_keypoints() -> 1662-dim vector -> `MP_Data/{action}/{seq}/{frame}.npy`
-2. Data Verification: Read `.npy` files -> validate shape (1662,) -> check hand detection rates
-3. Training: Load `.npy` sequences -> reshape to (N, 30, 1662) -> train 3-layer LSTM -> save `action_model.h5`
-4. Inference: base64 JPEG frame -> decode -> MediaPipe -> extract_keypoints -> 30-frame buffer -> LSTM predict -> stability filter -> JSON response
+1. Frontend captures camera frame as JPEG
+2. Frame sent as base64 via WebSocket to ML server (`/ws/sign-detection`)
+3. MediaPipe Holistic extracts 1662 keypoints (`ml/utils.py:extract_keypoints`)
+4. 30-frame sequence fed to LSTM model (`ml/models/action_model.h5`)
+5. StabilityFilter deduplicates consecutive predictions
+6. Response: sign prediction + confidence score sent to frontend
+7. Frontend renders sign label + plays audio feedback
 
-**WebSocket Frame Processing Pipeline:**
+**Conversation Intelligence Flow (Streaming):**
 
-1. Receive JSON `{"type": "frame", "frame": "base64..."}`
-2. Rate limit check (max 60 frames / 10 seconds per client)
-3. `decode_frame()`: base64 -> JPEG decode -> OpenCV BGR frame
-4. `mediapipe_detection()`: BGR -> RGB -> MediaPipe Holistic -> landmarks
-5. `extract_keypoints()`: landmarks -> 1662-dim flat array
-6. Buffer in 30-frame sliding window (`deque(maxlen=30)`)
-7. When buffer full: `model.predict()` on (1, 30, 1662) sequence
-8. `StabilityFilter.update()`: check N consecutive identical predictions above threshold
-9. Return JSON with sign, confidence, stability status
+1. Frontend captures 3-second audio chunks
+2. Audio sent as base64 via WebSocket to backend (`/ws/conversation`)
+3. Groq Whisper transcribes audio (`backend/app/services/groq_stt.py`)
+4. Parallel processing:
+   - Hume AI analyzes prosody/emotion from audio (`backend/app/services/hume_tone.py`)
+   - Tone mapper reduces 48 dimensions to 8 labels (`backend/app/services/tone_mapper.py`)
+   - Groq LLM simplifies jargon + generates quick replies (`backend/app/services/claude_intelligence.py`)
+5. ToneAggregator maintains moving average (`backend/app/services/tone_aggregator.py`)
+6. Results streamed back: transcript -> tone_update -> simplified text -> quick_replies
+
+**Accessibility Output (Profile-driven):**
+
+1. Backend results arrive at frontend via WebSocket
+2. Profile type determines which channels are active
+3. Deaf: Captions + Braille display + Quick-replies + Tone badges
+4. Blind: Audio narration + TTS expansion + Audio summaries
+5. DeafBlind: Braille output + haptic feedback patterns
+6. Mute: Sign detection input + text-to-speech output
 
 **State Management:**
-- File-based: Training data in `ml/MP_Data/`, model in `ml/models/`
-- Per-connection: Each WebSocket client has own MediaPipe instance, keypoint buffer, stability filter
-- Global: Single TensorFlow model loaded at server startup (shared across connections)
+- Backend: In-memory profiles (`_profiles` dict), per-connection conversation history
+- Frontend: React state in components, session storage for profile
+- ML: Per-connection frame buffer (30-frame sliding window)
+- No persistent database
 
 ## Key Abstractions
 
-**StabilityFilter (`ml/utils.py`):**
-- Purpose: Temporal smoothing to prevent flickering predictions
-- Pattern: Sliding window state machine (deque-based)
-- Requires N consecutive identical predictions above confidence threshold
-- Returns: `{is_stable, is_new_sign, sign}`
+**Service Pattern (Backend):**
+- Purpose: Encapsulate external API calls with error handling and fallbacks
+- Examples: `backend/app/services/groq_stt.py`, `backend/app/services/hume_tone.py`, `backend/app/services/elevenlabs_tts.py`
+- Pattern: Async functions with try/catch, graceful degradation on API failure
 
-**extract_keypoints (`ml/utils.py`):**
-- Purpose: Convert MediaPipe landmarks to fixed-size vector
-- Pattern: Critical contract function (MUST return shape 1662)
-- Order: [pose(132), face(1404), lh(63), rh(63)] - IMMUTABLE
-- Runtime assertion enforced
+**StabilityFilter (ML):**
+- Purpose: Deduplicate consecutive sign predictions for smooth UX
+- Location: `ml/utils.py`
+- Pattern: Sliding window with configurable threshold and stability count
 
-**Lifespan Context Manager (`ml/ws_server.py`):**
-- Purpose: Load TensorFlow model once at startup, not per-request
-- Pattern: FastAPI lifespan context manager
-- Graceful degradation: server starts even if model missing
+**ToneAggregator (Backend):**
+- Purpose: Moving average of emotion dimensions across utterances
+- Location: `backend/app/services/tone_aggregator.py`
+- Pattern: Dataclass-based samples, windowed aggregation
+
+**ProsodyBuffer (Backend):**
+- Purpose: Buffer audio chunks for batched tone analysis
+- Location: `backend/app/services/prosody_buffer.py`
+- Pattern: Async accumulator with time/size triggers
+
+**Profile-Channel Config:**
+- Purpose: Declare which output channels are active per profile type
+- Location: `backend/app/routers/profile.py` (CHANNEL_CONFIG)
+- Pattern: Dict mapping profile type to enabled feature flags
 
 ## Entry Points
 
-**Data Collection:**
-- Location: `ml/collect_data.py`
-- Triggers: `python ml/collect_data.py [--actions Hello,Yes] [--num_sequences 30]`
-- Responsibilities: Webcam capture, landmark extraction, data persistence
+**Frontend Entry:**
+- Location: `senseai-frontend/src/app/layout.tsx` (root layout + AccessibilityBoot)
+- Triggers: Browser navigation
+- Flow: `/` redirects to `/onboarding` -> profile creation -> `/start` -> `/live/[profile]`
 
-**Data Verification:**
-- Location: `ml/verify_data.py`
-- Triggers: `python ml/verify_data.py [--data_path PATH] [--min_hands 15]`
-- Responsibilities: Validate data quality before training
+**Backend Entry:**
+- Location: `backend/app/main.py` (FastAPI app init, CORS, router registration)
+- Triggers: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+- Responsibilities: Mount routers, configure CORS, health endpoint
 
-**Model Training:**
-- Location: `ml/train_model.py`
-- Triggers: `python ml/train_model.py [--epochs 200] [--batch_size 16] [--learning_rate 0.001]`
-- Responsibilities: Load data, build LSTM, train, evaluate, save model
+**ML Entry:**
+- Location: `ml/ws_server.py` (FastAPI WebSocket with lifespan model loading)
+- Triggers: `uvicorn ws_server:app --host 0.0.0.0 --port 8001`
+- Responsibilities: Load LSTM model on startup, handle frame-by-frame inference
 
-**WebSocket Server:**
-- Location: `ml/ws_server.py`
-- Triggers: `python ml/ws_server.py` or `uvicorn ws_server:app --port 8001`
-- Responsibilities: Real-time sign detection via WebSocket, health endpoint
-
-**Ralph Loop:**
-- Location: `scripts/ralph/ralph.sh`
-- Triggers: `make ralph-once` (1 iteration) or `make ralph-afk` (20 iterations)
-- Responsibilities: Read TODO.md, spawn Claude, verify tests, commit changes
-
-**Tests:**
-- Location: `ml/tests/`
-- Triggers: `cd ml && pytest tests/ -x -q --tb=short`
-- Responsibilities: Automated validation of all ML pipeline components
+**Training/Data Entry:**
+- `ml/train_model.py` - LSTM training with argparse CLI
+- `ml/collect_data.py` - Real-time keypoint collection
+- `ml/augment.py` - Data augmentation pipeline
 
 ## Error Handling
 
-**Strategy:** Log errors with context, graceful degradation where possible, fail fast on critical contracts
+**Strategy:** Service-level try/catch with graceful degradation
 
 **Patterns:**
-- Model loading: Logs error, server starts without model (health endpoint reports `model_loaded: false`)
-- Frame decoding: Returns None for invalid input, WebSocket sends error JSON to client
-- Keypoint extraction: Runtime assertion on shape (1662,) - fails hard if violated
-- Training: Logs warnings for missing sequences, continues with available data
-- Ralph loop: Verification gate (pytest must pass) before committing changes
+- External API failures caught per-service, return None/fallback values
+- Hume tone -> falls back to AFINN text sentiment (`backend/app/services/afinn_fallback.py`)
+- WebSocket errors logged and connection cleaned up in finally blocks
+- Broad `except Exception` used in many places (noted as concern)
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Python `logging` module throughout ML code
-- Format: `%(asctime)s [%(levelname)s] %(message)s`
-- Levels: INFO for normal operations, WARNING for threshold violations, ERROR for failures
+- ML service: Python `logging` module with structured output
+- Backend: `print()` statements (inconsistent, should migrate to logging)
 
 **Validation:**
-- Runtime assertion on `extract_keypoints()` output shape
-- CLI argument validation (action names, numeric ranges)
-- Frame size limit (5MB) in `decode_frame()`
-- Rate limiting (60 frames / 10s per client)
+- Pydantic models for REST endpoints (`backend/app/models/schemas.py`)
+- No schema validation for WebSocket messages (JSON parsed manually)
 
-**Configuration:**
-- Environment variable overrides with sensible defaults in `ml/utils.py`
-- CLI arguments for all scripts with argparse
-- No config files beyond `.env`
+**CORS:**
+- FastAPI CORSMiddleware (`backend/app/main.py` lines 32-49)
+- Default: wildcard `["*"]`; configurable via `FRONTEND_ORIGIN` env var
+- Mobile PWA support: `capacitor://localhost`, `ionic://localhost`
+
+**Real-time Communication:**
+- WebSocket with auto-reconnect (frontend: exponential backoff, 5 attempts)
+- `senseai-frontend/src/hooks/useWebSocket.ts`
 
 ---
 

@@ -26,7 +26,7 @@ class TestActionsConsistency:
         assert list(verify_data.ACTIONS) == list(UTILS_ACTIONS)
 
     def test_actions_length(self):
-        assert len(UTILS_ACTIONS) == 10
+        assert len(UTILS_ACTIONS) == 12
 
 
 class TestNumSequencesConsistency:

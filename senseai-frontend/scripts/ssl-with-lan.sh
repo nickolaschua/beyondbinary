@@ -4,7 +4,41 @@
 
 set -e
 cd "$(dirname "$0")/.."
-IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+
+is_valid_ipv4() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && [[ "$1" != 127.* ]] && [[ "$1" != 169.254.* ]]
+}
+
+detect_lan_ip() {
+  local ifname ip
+
+  ifname="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}' | head -n1 || true)"
+  if [[ -n "$ifname" ]]; then
+    ip="$(ipconfig getifaddr "$ifname" 2>/dev/null || true)"
+    if is_valid_ipv4 "$ip"; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+
+  for ifname in en0 en1 eth0 bridge100; do
+    ip="$(ipconfig getifaddr "$ifname" 2>/dev/null || true)"
+    if is_valid_ipv4 "$ip"; then
+      echo "$ip"
+      return 0
+    fi
+  done
+
+  ip="$(ifconfig | awk '/inet / {print $2}' | rg -v '^(127\.|169\.254\.)' | head -n1 || true)"
+  if is_valid_ipv4 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  return 1
+}
+
+IP="$(detect_lan_ip || true)"
 if [[ -z "$IP" ]]; then
   echo "Could not detect LAN IP. Run manually: mkcert localhost 127.0.0.1 ::1 YOUR_IP"
   exit 1

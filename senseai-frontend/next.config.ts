@@ -1,20 +1,27 @@
 import type { NextConfig } from "next";
+import os from "node:os";
+
+function detectLanHosts(): string[] {
+  const hosts = new Set<string>(["localhost", "127.0.0.1", "::1"]);
+  const nets = os.networkInterfaces();
+  for (const list of Object.values(nets)) {
+    if (!list) continue;
+    for (const net of list) {
+      if (net.family === "IPv4" && !net.internal && net.address) {
+        hosts.add(net.address);
+      }
+    }
+  }
+  return Array.from(hosts);
+}
 
 const nextConfig: NextConfig = {
   // Fix Next.js Turbopack "workspace root" warnings in mono-repos.
   turbopack: {
     root: __dirname,
   },
-  // Allow dev server to be opened via LAN IP (e.g. https://10.91.174.93:3000)
-  // Include any LAN IPs so dev works when opening via IP (e.g. from phone or other device)
-  allowedDevOrigins: [
-    "https://localhost:3000",
-    "http://localhost:3000",
-    "https://10.91.174.93:3000",
-    "http://10.91.174.93:3000",
-    "https://10.10.10.2:3000",
-    "http://10.10.10.2:3000",
-  ],
+  // Use current machine interfaces dynamically to avoid hardcoded IP churn.
+  allowedDevOrigins: detectLanHosts(),
 };
 
 export default nextConfig;

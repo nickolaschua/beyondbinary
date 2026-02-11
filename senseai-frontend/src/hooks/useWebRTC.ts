@@ -10,6 +10,7 @@ interface UseWebRTCOptions {
 
 export function useWebRTC({ localStream, onRemoteStream, onIceCandidate }: UseWebRTCOptions) {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>("new");
 
@@ -23,6 +24,21 @@ export function useWebRTC({ localStream, onRemoteStream, onIceCandidate }: UseWe
   useEffect(() => {
     onIceCandidateRef.current = onIceCandidate;
   }, [onIceCandidate]);
+
+  const flushPendingIceCandidates = useCallback(async () => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !pc.remoteDescription) return;
+    if (pendingIceCandidatesRef.current.length === 0) return;
+    const candidates = [...pendingIceCandidatesRef.current];
+    pendingIceCandidatesRef.current = [];
+    for (const candidate of candidates) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn("[WebRTC] Failed to apply queued ICE candidate:", err);
+      }
+    }
+  }, []);
 
   const createPeerConnection = useCallback(() => {
     if (peerConnectionRef.current) {
@@ -96,29 +112,57 @@ export function useWebRTC({ localStream, onRemoteStream, onIceCandidate }: UseWe
     async (offer: RTCSessionDescriptionInit) => {
       const pc = createPeerConnection();
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      await flushPendingIceCandidates();
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       return answer;
     },
-    [createPeerConnection]
+    [createPeerConnection, flushPendingIceCandidates]
   );
 
   const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit) => {
     const pc = peerConnectionRef.current;
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
-  }, []);
+    await flushPendingIceCandidates();
+  }, [flushPendingIceCandidates]);
 
   const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
     const pc = peerConnectionRef.current;
-    if (!pc) return;
+    if (!pc) {
+      pendingIceCandidatesRef.current.push(candidate);
+      return;
+    }
+    if (!pc.remoteDescription) {
+      pendingIceCandidatesRef.current.push(candidate);
+      return;
+    }
     await pc.addIceCandidate(new RTCIceCandidate(candidate));
   }, []);
+
+  // If local stream starts after peer connection is created, attach/replace tracks.
+  useEffect(() => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !localStream) return;
+
+    const senders = pc.getSenders();
+    for (const track of localStream.getTracks()) {
+      const existing = senders.find((s) => s.track?.kind === track.kind);
+      if (existing) {
+        existing.replaceTrack(track).catch((err) => {
+          console.warn("[WebRTC] Failed to replace local track:", err);
+        });
+      } else {
+        pc.addTrack(track, localStream);
+      }
+    }
+  }, [localStream]);
 
   const closePeerConnection = useCallback(() => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
+      pendingIceCandidatesRef.current = [];
       setRemoteStream(null);
       setConnectionState("closed");
     }

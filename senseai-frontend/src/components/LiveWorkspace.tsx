@@ -17,6 +17,44 @@ import { getToneDisplay } from "@/lib/toneDisplay";
 
 const AUDIO_CHUNK_INTERVAL_MS = 1500;
 const USE_BROWSER_WEB_SPEECH = false;
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function rewriteRuntimeUrl(rawUrl: string, kind: "http" | "ws"): string {
+  if (typeof window === "undefined") return rawUrl;
+  try {
+    const url = new URL(rawUrl);
+    const pageHost = window.location.hostname;
+    const pageIsLocal = LOCAL_HOSTS.has(pageHost);
+    const targetIsLocal = LOCAL_HOSTS.has(url.hostname);
+
+    // In non-local access, always target backend on the same host as the page.
+    // This prevents stale query params (old IPs/localhost) from breaking signaling.
+    if (!pageIsLocal && url.hostname !== pageHost) {
+      url.hostname = pageHost;
+    } else if (targetIsLocal && !pageIsLocal) {
+      url.hostname = pageHost;
+    }
+
+    if (!url.port) {
+      url.port = "8000";
+    }
+
+    if (window.location.protocol === "https:") {
+      if (kind === "http" && url.protocol === "http:") url.protocol = "https:";
+      if (kind === "ws" && url.protocol === "ws:") url.protocol = "wss:";
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return rawUrl;
+  }
+}
+
+function shouldInitiateOffer(localClientId: string | null, remoteClientId: string): boolean {
+  if (!localClientId) return false;
+  // Deterministic tie-breaker: only one side starts offer.
+  return localClientId > remoteClientId;
+}
 
 type SignPrediction = {
   type: "sign_prediction";
@@ -68,14 +106,10 @@ export function LiveWorkspace({
 
   // When page is loaded over HTTPS, upgrade backend URLs to https/wss (mixed content rule)
   const effectiveApiUrl = useMemo(() => {
-    if (typeof window === "undefined") return apiUrl;
-    if (window.location.protocol !== "https:") return apiUrl;
-    return apiUrl.replace(/^http:\/\//i, "https://");
+    return rewriteRuntimeUrl(apiUrl, "http");
   }, [apiUrl]);
   const effectiveWsUrl = useMemo(() => {
-    if (typeof window === "undefined") return wsUrl;
-    if (window.location.protocol !== "https:") return wsUrl;
-    return wsUrl.replace(/^ws:\/\//i, "wss://");
+    return rewriteRuntimeUrl(wsUrl, "ws");
   }, [wsUrl]);
 
   const wsEndpoint = useMemo(() => {
@@ -103,6 +137,9 @@ export function LiveWorkspace({
   const pendingWebRtcOfferRef = useRef<{ fromPeerId: string; offer: RTCSessionDescriptionInit } | null>(null);
   const pendingWebRtcAnswerRef = useRef<RTCSessionDescriptionInit | null>(null);
   const pendingWebRtcCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const shouldCreateOfferRef = useRef(false);
+  const hasCreatedOfferForPeerRef = useRef<string | null>(null);
+  const localClientIdRef = useRef<string | null>(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const NO_SIGN_YET = "—";
@@ -236,6 +273,18 @@ export function LiveWorkspace({
         case "status":
           setConvStatus(String(msg.message ?? ""));
           break;
+        case "connection_ready": {
+          const clientId = msg.client_id != null ? String(msg.client_id) : "";
+          if (clientId) {
+            localClientIdRef.current = clientId;
+            console.log("[WebRTC] Connection ready. Local client id:", clientId);
+            if (remotePeerId) {
+              shouldCreateOfferRef.current = shouldInitiateOffer(localClientIdRef.current, remotePeerId);
+            }
+            setWebrtcTrigger((prev) => prev + 1);
+          }
+          break;
+        }
         case "error":
           setErrors((prev) => [...prev.slice(-5), String(msg.message ?? "Unknown error")]);
           break;
@@ -243,7 +292,14 @@ export function LiveWorkspace({
           const peerId = String(msg.peer_id ?? "");
           console.log("[WebRTC] Peer joined:", peerId);
           if (peerId) {
+            if (peerId === remotePeerId) {
+              console.log("[WebRTC] Duplicate peer_joined ignored for:", peerId);
+              break;
+            }
             setRemotePeerId(peerId);
+            shouldCreateOfferRef.current = shouldInitiateOffer(localClientIdRef.current, peerId);
+            hasCreatedOfferForPeerRef.current = null;
+            setWebrtcTrigger((prev) => prev + 1);
             // Offer will be created in useEffect
           }
           break;
@@ -253,10 +309,13 @@ export function LiveWorkspace({
           const offer = msg.offer as RTCSessionDescriptionInit;
           console.log("[WebRTC] Received offer from:", fromPeerId);
           if (fromPeerId && offer) {
+            // Callee side: do not initiate a competing offer.
+            shouldCreateOfferRef.current = false;
+            hasCreatedOfferForPeerRef.current = fromPeerId;
             setRemotePeerId(fromPeerId);
             // Store for async WebRTC handling
             pendingWebRtcOfferRef.current = { fromPeerId, offer };
-            setWebrtcTrigger(prev => prev + 1);
+            setWebrtcTrigger((prev) => prev + 1);
           }
           break;
         }
@@ -265,7 +324,7 @@ export function LiveWorkspace({
           console.log("[WebRTC] Received answer");
           if (answer) {
             pendingWebRtcAnswerRef.current = answer;
-            setWebrtcTrigger(prev => prev + 1);
+            setWebrtcTrigger((prev) => prev + 1);
           }
           break;
         }
@@ -274,12 +333,19 @@ export function LiveWorkspace({
           console.log("[WebRTC] Received ICE candidate");
           if (candidate) {
             pendingWebRtcCandidatesRef.current.push(candidate);
-            setWebrtcTrigger(prev => prev + 1);
+            setWebrtcTrigger((prev) => prev + 1);
           }
           break;
         }
         case "peer_left": {
+          const leftPeerId = String(msg.peer_id ?? "");
+          if (remotePeerId && leftPeerId && leftPeerId !== remotePeerId) {
+            console.log("[WebRTC] Ignoring peer_left for non-active peer:", leftPeerId);
+            break;
+          }
           setRemotePeerId(null);
+          shouldCreateOfferRef.current = false;
+          hasCreatedOfferForPeerRef.current = null;
           pendingWebRtcOfferRef.current = null;
           pendingWebRtcAnswerRef.current = null;
           pendingWebRtcCandidatesRef.current = [];
@@ -289,7 +355,7 @@ export function LiveWorkspace({
           break;
       }
     },
-    [effectiveApiUrl, profileId]
+    [effectiveApiUrl, profileId, remotePeerId]
   );
 
   const { isConnected, connect, disconnect, sendJSON } = useWebSocket({
@@ -385,63 +451,81 @@ export function LiveWorkspace({
     if (pendingWebRtcOfferRef.current) {
       const { fromPeerId, offer } = pendingWebRtcOfferRef.current;
       pendingWebRtcOfferRef.current = null;
-      handleOfferRef.current(offer).then((answer) => {
-        const sendJSON = sendConvJSONRef2.current;
-        if (sendJSON) {
-          sendJSON({
-            type: "webrtc_answer",
-            target_peer_id: fromPeerId,
-            answer: answer,
-          });
-        }
-      });
+      handleOfferRef.current(offer)
+        .then((answer) => {
+          const sendJSON = sendConvJSONRef.current;
+          if (sendJSON) {
+            sendJSON({
+              type: "webrtc_answer",
+              target_peer_id: fromPeerId,
+              answer: answer,
+            });
+          }
+        })
+        .catch((err) => {
+          console.error("[WebRTC] Failed to handle offer:", err);
+          setErrors((prev) => [...prev.slice(-5), "Failed to handle WebRTC offer"]);
+        });
     }
 
     if (pendingWebRtcAnswerRef.current) {
       const answer = pendingWebRtcAnswerRef.current;
       pendingWebRtcAnswerRef.current = null;
-      handleAnswerRef.current(answer);
+      handleAnswerRef.current(answer).catch((err) => {
+        console.error("[WebRTC] Failed to handle answer:", err);
+        setErrors((prev) => [...prev.slice(-5), "Failed to handle WebRTC answer"]);
+      });
     }
 
     if (pendingWebRtcCandidatesRef.current.length > 0) {
       const candidates = [...pendingWebRtcCandidatesRef.current];
       pendingWebRtcCandidatesRef.current = [];
       candidates.forEach((candidate) => {
-        handleIceCandidateRef.current(candidate);
+        handleIceCandidateRef.current(candidate).catch((err) => {
+          console.error("[WebRTC] Failed to add ICE candidate:", err);
+        });
       });
     }
   }, [webrtcTrigger]);
 
-  // Handle peer_joined event to create offer
-  const createOfferRef = useRef(createOffer);
-  const sendConvJSONRef2 = useRef(sendConvJSON);
-
   useEffect(() => {
-    createOfferRef.current = createOffer;
-  }, [createOffer]);
-
-  useEffect(() => {
-    sendConvJSONRef2.current = sendConvJSON;
-  }, [sendConvJSON]);
-
-  useEffect(() => {
-    if (remotePeerId && localStreamState) {
-      console.log("[WebRTC] Creating offer for peer:", remotePeerId, "with stream:", !!localStreamState);
-      const sendJSON = sendConvJSONRef2.current;
-      if (sendJSON) {
-        createOfferRef.current().then((offer) => {
-          console.log("[WebRTC] Sending offer to peer:", remotePeerId);
-          sendJSON({
-            type: "webrtc_offer",
-            target_peer_id: remotePeerId,
-            offer: offer,
-          });
-        });
-      }
-    } else {
+    if (!remotePeerId || !localStreamState) {
       console.log("[WebRTC] Not creating offer - remotePeerId:", remotePeerId, "localStream:", !!localStreamState);
+      return;
     }
-  }, [remotePeerId, localStreamState]);
+
+    if (!shouldCreateOfferRef.current) {
+      console.log("[WebRTC] Skipping offer creation (not initiator)");
+      return;
+    }
+
+    if (hasCreatedOfferForPeerRef.current === remotePeerId) {
+      console.log("[WebRTC] Offer already created for peer:", remotePeerId);
+      return;
+    }
+
+    console.log("[WebRTC] Creating offer for peer:", remotePeerId, "with stream:", !!localStreamState);
+    const sendJSON = sendConvJSONRef.current;
+    if (!sendJSON) return;
+
+    hasCreatedOfferForPeerRef.current = remotePeerId;
+    shouldCreateOfferRef.current = false;
+
+    createOffer()
+      .then((offer) => {
+        console.log("[WebRTC] Sending offer to peer:", remotePeerId);
+        sendJSON({
+          type: "webrtc_offer",
+          target_peer_id: remotePeerId,
+          offer: offer,
+        });
+      })
+      .catch((err) => {
+        console.error("[WebRTC] Failed to create/send offer:", err);
+        hasCreatedOfferForPeerRef.current = null;
+        setErrors((prev) => [...prev.slice(-5), "Failed to create WebRTC offer"]);
+      });
+  }, [remotePeerId, localStreamState, createOffer, webrtcTrigger]);
 
   // Handle peer_left event
   useEffect(() => {
@@ -627,6 +711,10 @@ export function LiveWorkspace({
     if (cameraOn && !isConnected) connect();
   }, [cameraOn, isConnected, connect]);
 
+  useEffect(() => {
+    if (cameraOn && !convConnected) connectConv();
+  }, [cameraOn, convConnected, connectConv]);
+
   // Stream sign-detection frames whenever camera is on (no separate start button)
   useEffect(() => {
     if (!cameraOn) {
@@ -758,9 +846,15 @@ export function LiveWorkspace({
               {cameraOn ? "Turn camera off" : "Turn camera on"}
             </button>
             <button type="button" onClick={isConnected ? disconnect : connect} className="rounded-lg border border-slate-500 px-4 py-2">
-              {isConnected ? "Disconnect socket" : "Reconnect socket"}
+              {isConnected ? "Disconnect sign socket" : "Reconnect sign socket"}
+            </button>
+            <button type="button" onClick={convConnected ? disconnectConv : connectConv} className="rounded-lg border border-slate-500 px-4 py-2">
+              {convConnected ? "Disconnect call signaling" : "Reconnect call signaling"}
             </button>
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Sign socket: {isConnected ? "Connected" : "Disconnected"} | Call signaling: {convConnected ? "Connected" : "Disconnected"} | WebRTC: {connectionState}
+          </p>
           {buffering && <p className="mt-3 text-sm text-amber-300">{buffering}</p>}
         </section>
 

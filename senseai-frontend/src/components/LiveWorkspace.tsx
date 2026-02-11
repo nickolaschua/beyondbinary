@@ -467,9 +467,9 @@ export function LiveWorkspace({
       const ctx = canvasRef.current.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(videoRef.current, 0, 0, width, height);
-      const frame = canvasRef.current.toDataURL("image/jpeg", 0.7).split(",", 2)[1];
+      const frame = canvasRef.current.toDataURL("image/jpeg", 0.5).split(",", 2)[1];
       sendJSON({ type: "frame", frame });
-    }, 120);
+    }, 200);
 
     return () => {
       if (frameTimerRef.current) window.clearInterval(frameTimerRef.current);

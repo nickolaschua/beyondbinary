@@ -36,6 +36,7 @@ NUM_SEQUENCES = 30
 
 DATA_PATH = os.path.join(_ML_DIR, 'MP_Data')
 MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.h5')
+TFLITE_MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.tflite')
 
 # --- Safe env var parsing helpers ---
 

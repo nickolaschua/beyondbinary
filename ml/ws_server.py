@@ -31,7 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils import (
     ACTIONS,
     SEQUENCE_LENGTH,
-    MODEL_PATH,
+    TFLITE_MODEL_PATH,
     CONFIDENCE_THRESHOLD,
     STABILITY_WINDOW,
     SENTENCE_TIMEOUT,
@@ -49,8 +49,10 @@ from utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ws_server")
 
-# --- Global model (loaded once at startup) ---
-model = None
+# --- Global TFLite interpreter (loaded once at startup) ---
+interpreter = None
+input_details = None
+output_details = None
 
 # --- Inference timing ---
 inference_times = deque(maxlen=100)
@@ -58,14 +60,17 @@ inference_times = deque(maxlen=100)
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
-    global model
-    logger.info(f"Loading model from {MODEL_PATH}...")
-    if not os.path.isfile(MODEL_PATH):
-        logger.error(f"Model file not found at {MODEL_PATH}. Server will start but predictions will not work.")
+    global interpreter, input_details, output_details
+    logger.info(f"Loading TFLite model from {TFLITE_MODEL_PATH}...")
+    if not os.path.isfile(TFLITE_MODEL_PATH):
+        logger.error(f"Model file not found at {TFLITE_MODEL_PATH}. Server will start but predictions will not work.")
     else:
         try:
-            model = tf.keras.models.load_model(MODEL_PATH)
-            logger.info(f"Model loaded. Actions: {list(ACTIONS)}")
+            interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
+            interpreter.allocate_tensors()
+            input_details = interpreter.get_input_details()
+            output_details = interpreter.get_output_details()
+            logger.info(f"TFLite model loaded. Actions: {list(ACTIONS)}")
         except Exception as e:
             logger.error(f"Failed to load model: {e}. Server will start but predictions will not work.")
     yield
@@ -88,7 +93,7 @@ async def health():
     avg_ms = round(sum(inference_times) / len(inference_times), 1) if inference_times else 0
     return {
         "status": "ok",
-        "model_loaded": model is not None,
+        "model_loaded": interpreter is not None,
         "actions": list(ACTIONS),
         "sequence_length": SEQUENCE_LENGTH,
         "avg_inference_ms": avg_ms,
@@ -145,7 +150,7 @@ async def sign_detection(websocket: WebSocket):
 
     # Per-connection state
     mp_holistic = mp.solutions.holistic
-    holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+    holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.3)
     keypoint_buffer = deque(maxlen=SEQUENCE_LENGTH)
     stability_filter = StabilityFilter(window_size=STABILITY_WINDOW, threshold=CONFIDENCE_THRESHOLD)
     frame_times = deque(maxlen=60)
@@ -214,9 +219,11 @@ async def sign_detection(websocket: WebSocket):
                 })
                 continue
 
-            # Run prediction
-            sequence = np.expand_dims(np.array(list(keypoint_buffer)), axis=0)
-            predictions = model.predict(sequence, verbose=0)[0]
+            # Run TFLite prediction
+            sequence = np.expand_dims(np.array(list(keypoint_buffer)), axis=0).astype(np.float32)
+            interpreter.set_tensor(input_details[0]['index'], sequence)
+            interpreter.invoke()
+            predictions = interpreter.get_tensor(output_details[0]['index'])[0]
             t1 = time.perf_counter()
 
             total_inference_ms = round((t1 - t0) * 1000, 1)

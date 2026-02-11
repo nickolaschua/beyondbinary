@@ -36,9 +36,9 @@ class TestLifespanStartup:
 
     def test_health_model_loaded_true_with_model_file(self):
         """After lifespan startup with a valid model file, /health returns model_loaded=True."""
-        mock_model = MagicMock()
+        mock_interp = MagicMock()
 
-        with patch("ws_server.tf.keras.models.load_model", return_value=mock_model), \
+        with patch("ws_server.tf.lite.Interpreter", return_value=mock_interp), \
              patch("ws_server.os.path.isfile", return_value=True):
             with TestClient(ws_server.app, raise_server_exceptions=False) as client:
                 response = client.get("/health")
@@ -47,11 +47,11 @@ class TestLifespanStartup:
                     f"Expected model_loaded=True, got {data['model_loaded']}"
 
         # Clean up
-        ws_server.model = None
+        ws_server.interpreter = None
 
     def test_health_model_loaded_false_without_model_file(self):
         """After lifespan startup without model file, /health returns model_loaded=False."""
-        ws_server.model = None
+        ws_server.interpreter = None
 
         with patch("ws_server.os.path.isfile", return_value=False):
             with TestClient(ws_server.app, raise_server_exceptions=False) as client:
@@ -61,4 +61,4 @@ class TestLifespanStartup:
                     f"Expected model_loaded=False, got {data['model_loaded']}"
 
         # Clean up
-        ws_server.model = None
+        ws_server.interpreter = None

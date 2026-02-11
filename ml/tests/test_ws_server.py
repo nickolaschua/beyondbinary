@@ -17,12 +17,12 @@ import ws_server
 
 @pytest.fixture
 def client():
-    """TestClient with model explicitly set to None (simulates no model loaded)."""
+    """TestClient with interpreter explicitly set to None (simulates no model loaded)."""
     with TestClient(ws_server.app, raise_server_exceptions=False) as c:
-        # Set model to None AFTER lifespan runs (model file may exist on disk)
-        ws_server.model = None
+        # Set interpreter to None AFTER lifespan runs (model file may exist on disk)
+        ws_server.interpreter = None
         yield c
-    ws_server.model = None
+    ws_server.interpreter = None
 
 
 class TestHealthEndpoint:

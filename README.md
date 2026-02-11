@@ -1,75 +1,123 @@
 # BeyondBinary
 
-Accessibility-first communication platform for deaf, blind, deafblind, and mute users. Real-time ASL sign language detection, voice-to-text, text-to-speech, tone analysis, braille output, and video calling.
+Accessibility-first communication platform that bridges the gap between deaf, blind, deafblind, and mute users through real-time AI. Combines ASL sign language detection, speech-to-text, text-to-speech, emotional tone analysis, braille output, and peer-to-peer video calling into a single live workspace.
 
-## Architecture
+## The Problem
+
+Current assistive technologies focus on single-modality solutions — speech-to-text, basic sign recognition, or simple navigation aids — that don't address the complex, multi-layered needs of users with disabilities. These fragmented tools fail to account for regional sign language variations, contextual nuances, and the reality that many users need multiple modalities working together simultaneously.
+
+BeyondBinary tackles this by combining vision, audio, text, haptics, and AI into one cohesive system that adapts to individual needs. A deaf user gets large captions with emotional tone indicators. A blind user gets speech narration and braille. A deafblind user gets both. Rather than forcing users to stitch together separate tools, BeyondBinary provides a single workspace where all modalities work in concert.
+
+## How It Works
 
 ```
-senseai-frontend/     Next.js 16 + React 19 frontend (TypeScript)
-backend/              FastAPI backend — TTS, STT, tone, braille, AI conversation
-ml/                   SenseAI ML pipeline — ASL detection (MediaPipe + LSTM)
+                    ┌──────────────────────────────────────────┐
+                    │           Live Workspace (Frontend)       │
+                    │                                          │
+                    │  ┌─────────┐  ┌──────────┐  ┌────────┐  │
+                    │  │ Webcam  │  │ Captions  │  │Braille │  │
+                    │  │ + Sign  │  │ + Tone    │  │Display │  │
+                    │  │Detection│  │ Feed      │  │(6-dot) │  │
+                    │  └────┬────┘  └─────┬─────┘  └───┬────┘  │
+                    │       │             │            │        │
+                    └───────┼─────────────┼────────────┼────────┘
+                            │             │            │
+              ┌─────────────▼─┐     ┌─────▼──────┐    │
+              │  ML Server    │     │  Backend    │    │
+              │  MediaPipe →  │     │  Groq STT   │    │
+              │  LSTM → Sign  │     │  Hume Tone  │    │
+              │  (port 8765)  │     │  11Labs TTS │    │
+              └───────────────┘     │  Claude AI  │    │
+                                    │  (port 8000)│    │
+                                    └─────────────┘    │
+                                          │            │
+                                    ┌─────▼────────────▼────┐
+                                    │   UEB Grade 1 Braille  │
+                                    │   Translation Engine   │
+                                    └────────────────────────┘
 ```
 
-### ML Pipeline (`ml/`)
+## Accessibility Profiles
 
-Webcam frames → MediaPipe Holistic landmarks → 30-frame sliding window → LSTM classifier → predicted ASL sign. Served over WebSocket for real-time inference.
+Users select a profile at onboarding. Each profile activates a different combination of input/output channels:
 
-- **Python 3.12** (MediaPipe 0.10.21 requires 3.9–3.12)
-- **TensorFlow 2.16.2**, numpy <2, opencv, scikit-learn
-- 131+ tests via pytest
-- WebSocket protocol: see `docs/WEBSOCKET.md`
+| Profile | Receives | Sends | Special Features |
+|---------|----------|-------|------------------|
+| **Deaf** | Large captions, sign interpretation, tone indicators | Text, message cards | Tone emoji badges (😊 😠 😟), visual-first layout |
+| **Blind** | Speech narration, braille output, tone identification | Text-to-speech | Audio guidance on every page, ElevenLabs voice |
+| **Deafblind** | Braille (always-on), optional audio, tone labels | Text-to-speech, message cards | 12-cell braille display, extra-large 5xl text |
+| **Mute** | Captions, sign interpretation, audio context | Text-to-speech, text output | Quick reply buttons for fast responses |
 
-### Backend (`backend/`)
+## Features
 
-FastAPI server providing:
+### ASL Sign Detection
+Real-time detection of 12 ASL signs via webcam at 5 FPS:
 
-- **Sign detection** — proxies to ML WebSocket server
-- **Speech-to-text** — Groq Whisper + OpenAI fallback
-- **Text-to-speech** — ElevenLabs with Web Speech API fallback
-- **Tone analysis** — Hume AI prosody + AFINN sentiment fallback
-- **Braille translation** — Grade 1 UEB output
-- **AI conversation** — Claude intelligence for contextual responses
+> Hello, Thank You, Help, Yes, No, Please, Sorry, I Love You, Stop, More, How Are You, Good
 
-### Frontend (`senseai-frontend/`)
+Pipeline: webcam frame → MediaPipe Holistic (1662 landmarks) → 30-frame sliding window → LSTM classifier → stability filter (5 consecutive frames) → confirmed sign.
 
-Next.js app with accessibility-driven UI:
+### Voice + Tone Intelligence
+- **Speech-to-text** via Groq Whisper (~200ms latency), OpenAI fallback
+- **Emotional tone analysis** via Hume AI prosody (~300ms), AFINN sentiment fallback
+- **Text-to-speech** via ElevenLabs multilingual v2, Web Speech API fallback
+- **Quick replies** generated by Claude based on conversation context
 
-- **Onboarding** — profile selection (deaf, blind, deafblind, mute)
-- **Live workspace** — real-time session with ASL detection, captions, tone display
-- **Video calling** — WebRTC peer-to-peer
-- **Braille display** — visual braille cell rendering
-- **Voice commands** — hands-free navigation
-- **Audio guidance** — TTS page hints for blind users
+### Braille Display
+Visual 6-dot UEB Grade 1 braille cells rendered in the browser. 12-cell scrolling display converts conversation text to braille in real-time. Supports a–z, 0–9, and common punctuation with number indicator prefix.
+
+### Video Calling
+WebRTC peer-to-peer video with STUN/TURN relay. Signaling through backend WebSocket. Camera toggle, local/remote stream display.
+
+## Tech Stack
+
+| Layer | Technology | Port |
+|-------|-----------|------|
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4 | 3000 |
+| Backend | FastAPI, Python 3.12 | 8000 |
+| ML Server | TensorFlow 2.16, MediaPipe 0.10.21, LSTM | 8765 |
+
+### External Services
+
+| Service | Provider | Purpose | Fallback |
+|---------|----------|---------|----------|
+| Speech-to-text | Groq Whisper | Audio transcription | OpenAI Whisper |
+| Text-to-speech | ElevenLabs | Voice synthesis | Web Speech API |
+| Tone analysis | Hume AI | Prosody/emotion detection | AFINN sentiment |
+| AI intelligence | Anthropic Claude | Quick replies, jargon simplification | — |
 
 ## Quick Start
 
-### ML Pipeline
+### 1. ML Server
 
 ```bash
-# Create Python 3.12 venv (system Python 3.13 is NOT compatible)
+# Requires Python 3.12 (3.13 is NOT compatible with MediaPipe)
 py -3.12 -m venv ml/venv
 ml\venv\Scripts\pip.exe install -r ml/requirements.txt
 
 # Verify environment
 cd ml && venv\Scripts\python.exe test_setup.py
 
-# Start ML WebSocket server
+# Start WebSocket server on port 8765
 cd ml && venv\Scripts\python.exe ws_server.py
 ```
 
-### Backend
+### 2. Backend
 
 ```bash
 cd backend
 python -m venv venv
 venv\Scripts\pip.exe install -r requirements.txt
 
-# Copy .env.example to .env and fill in API keys
+# Copy .env.example and fill in your API keys
+cp .env.example .env
 # Required: GROQ_API_KEY, ELEVENLABS_API_KEY, ANTHROPIC_API_KEY, HUME_API_KEY
+# Optional: OPENAI_API_KEY (STT fallback)
+
 python run_dev.sh
 ```
 
-### Frontend
+### 3. Frontend
 
 ```bash
 cd senseai-frontend
@@ -77,18 +125,46 @@ npm install
 npm run dev
 ```
 
-## Key Dependencies
+Open `http://localhost:3000` → select your accessibility profile → enter live workspace.
 
-| Package | Version | Component | Purpose |
-|---------|---------|-----------|---------|
-| mediapipe | 0.10.21 | ML | Last version with `mp.solutions.holistic` |
-| tensorflow | 2.16.2 | ML | LSTM model (numpy <2 constraint) |
-| fastapi | 0.128.6 | ML + Backend | WebSocket / REST server |
-| next | 16.1.6 | Frontend | React framework |
-| react | 19.2.3 | Frontend | UI library |
+## Project Structure
 
-## Documentation
+```
+beyondbinary/
+├── ml/                          # ASL detection pipeline
+│   ├── ws_server.py             # WebSocket inference server
+│   ├── inference.py             # Real-time prediction engine
+│   ├── landmarks.py             # MediaPipe landmark extraction
+│   ├── preprocessing.py         # Data augmentation + preprocessing
+│   ├── train_model.py           # LSTM training script
+│   ├── model_architecture.py    # Keras model definition
+│   ├── config.py                # Signs, thresholds, paths
+│   └── tests/                   # 214+ pytest tests
+├── backend/                     # API gateway + service orchestration
+│   ├── app/
+│   │   ├── main.py              # FastAPI app entry point
+│   │   ├── config.py            # Environment + settings
+│   │   ├── routers/             # Endpoint handlers (STT, TTS, tone, braille, conversation)
+│   │   └── services/            # External API integrations (Groq, Hume, ElevenLabs, Claude)
+│   ├── .env.example             # API key template
+│   └── requirements.txt
+├── senseai-frontend/            # Accessible UI
+│   ├── src/app/                 # Next.js pages (onboarding, session, settings)
+│   ├── src/components/          # React components (LiveWorkspace, BrailleCell, VideoCall, ...)
+│   ├── src/hooks/               # useWebSocket, useWebRTC, useVoiceCommands
+│   └── src/lib/                 # API client, profile config, braille mapping
+└── docs/
+    ├── WEBSOCKET.md             # ML WebSocket protocol spec
+    └── BACKEND_INTEGRATION.md   # Frontend ↔ Backend integration guide
+```
 
-- `docs/WEBSOCKET.md` — ML WebSocket protocol specification
-- `docs/BACKEND_INTEGRATION.md` — Frontend ↔ Backend integration guide
-- `backend/README.md` — Backend API reference and setup
+## Running Tests
+
+```bash
+# ML pipeline (214+ tests)
+ml\venv\Scripts\python.exe -m pytest ml/tests/ -v
+```
+
+## License
+
+All rights reserved.

@@ -1,0 +1,305 @@
+Starting Ralph - Tool: claude - Max iterations: 10
+TODO file: /c/Users/nicko/Desktop/beyondbinary/ralph-ws/docs/TODO.md
+Python: /c/Users/nicko/Desktop/beyondbinary/ralph-ws/ml/venv/Scripts/python.exe
+
+===============================================================
+  Ralph Iteration 1 of 10 (claude)
+===============================================================
+Task 1 complete. Checking TODO status — 3 unchecked tasks remain (rate limiting, inference timing, lifespan migration), so unchecked tasks remain and I end normally.
+
+**Summary of completed work:**
+
+**Task: Harden decode_frame** 
+
+Changes to `ml/ws_server.py`:
+- Added `import binascii` 
+- Added 5MB payload size check before any processing (returns `None` + logs warning)
+- Added data URL comma validation — `data:` prefix with no comma returns `None`
+- Replaced bare `except Exception:` on `b64decode` with `except (binascii.Error, ValueError):`
+- Changed WebSocket handler's outer `except` to use `logger.exception()` for full tracebacks
+
+New test file `ml/tests/test_decode_frame_hardened.py` with 11 tests covering:
+- (a) Invalid base64 → None
+- (b) Valid base64 non-image → None  
+- (c) `data:` prefix with no comma → None
+- (d) Payload >5MB → None (verified size check runs before b64decode)
+- (e) Normal valid input still works
+
+All 73 tests pass. Two commits made on `ralph/ws` branch.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 98%]
+.                                                                        [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:62
+  C:\Users\nicko\Desktop\beyondbinary\ralph-ws\ml\ws_server.py:62: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-ws\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+73 passed, 4 warnings in 97.28s (0:01:37)
+--- Verification PASSED ---
+Iteration 1 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 2 of 10 (claude)
+===============================================================
+Task complete. Two unchecked tasks remain (inference timing and lifespan migration), so this is not ALL_TASKS_COMPLETE yet.
+
+## Summary
+
+**Completed: Per-client frame rate limiting** (TDD)
+
+- **RED**: Wrote `ml/tests/test_ws_rate_limit.py` with two tests:
+  - `test_normal_rate_all_accepted` — 60 frames at 1/sec (spread over 60s) → no rate limit errors
+  - `test_burst_over_limit_returns_error` — 61 frames at 0.1s intervals (6s total) → rate limit error with message "Rate limit exceeded: max 60 frames per 10 seconds"
+  - Confirmed failure: `assert 0 > 0` — no rate limiting existed
+
+- **GREEN**: Added minimal implementation in `ws_server.py`:
+  - `frame_times = deque(maxlen=60)` per connection (line 133)
+  - Rate limit check after message type validation: append `time.time()`, check if deque full with <10s span → send error and skip (lines 153-157)
+
+- **VERIFY**: All 75 tests pass (including fix for mediapipe mock in `conftest.py` to support mediapipe >= 0.10.22)
+
+- **COMMIT**: `05e43bc feat(ws): add per-client frame rate limiting` + `1339f21 chore(ws): mark task done`
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 96%]
+...                                                                      [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:62
+  C:\Users\nicko\Desktop\beyondbinary\ralph-ws\ml\ws_server.py:62: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-ws\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+75 passed, 4 warnings in 96.31s (0:01:36)
+--- Verification PASSED ---
+Iteration 2 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 3 of 10 (claude)
+===============================================================
+**Inference timing task complete.** Here's a summary of what was done:
+
+**Task: Add inference timing**
+
+- **RED**: Wrote `ml/tests/test_ws_timing.py` with 3 tests:
+  - `test_sign_prediction_includes_total_inference_ms` — verifies the prediction response has the timing field
+  - `test_health_includes_avg_inference_ms` — verifies `/health` includes average timing after inferences
+  - `test_health_avg_inference_ms_zero_when_no_inferences` — verifies `/health` returns 0 before any inferences
+
+- **GREEN**: Modified `ml/ws_server.py`:
+  - Added module-level `inference_times = deque(maxlen=100)` 
+  - Wrapped MediaPipe detection + model.predict() with `time.perf_counter()` timing
+  - Added `total_inference_ms` (rounded to 1 decimal) to sign_prediction response
+  - Added warning log when inference exceeds 200ms
+  - Added `avg_inference_ms` to `/health` endpoint
+
+- **VERIFY**: Full suite — 78 passed, 0 failed
+
+One unchecked task remains: **Migrate to lifespan**.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 92%]
+......                                                                   [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:65
+  C:\Users\nicko\Desktop\beyondbinary\ralph-ws\ml\ws_server.py:65: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-ws\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+78 passed, 4 warnings in 103.05s (0:01:43)
+--- Verification PASSED ---
+Iteration 3 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 4 of 10 (claude)
+===============================================================
+**ALL_TASKS_COMPLETE.** Here's a summary of what was done:
+
+### Task: Migrate to lifespan
+
+**RED** — Wrote `ml/tests/test_ws_lifespan.py` with 3 tests:
+- `test_uses_lifespan_not_on_event` — verifies source code uses lifespan, not deprecated `on_event`
+- `test_health_model_loaded_true_with_model_file` — /health returns `model_loaded=True` after lifespan loads model
+- `test_health_model_loaded_false_without_model_file` — /health returns `model_loaded=False` when no model file exists
+
+**GREEN** — Modified `ml/ws_server.py`:
+- Added `import contextlib`
+- Replaced `@app.on_event("startup") async def load_model()` with `@contextlib.asynccontextmanager async def lifespan(app)`
+- Added `lifespan=lifespan` to the `FastAPI()` constructor
+- Reordered globals and lifespan function before `app` creation
+
+**VERIFY** — Full test suite: **81 passed, 0 failed**.
+
+All 4 tasks in `TODO-ws.md` are complete. `ALL_TASKS_COMPLETE` has been marked.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 88%]
+.........                                                                [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+81 passed, 2 warnings in 155.41s (0:02:35)
+--- Verification PASSED ---
+Iteration 4 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 5 of 10 (claude)
+===============================================================
+All tasks in `TODO-ws.md` are already complete, including `ALL_TASKS_COMPLETE` which is checked off. There's nothing left to do — all tasks in Stream 1 (ws_server.py) have been finished in previous iterations.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 88%]
+.........                                                                [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+81 passed, 2 warnings in 300.81s (0:05:00)
+--- Verification PASSED ---
+Iteration 5 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 6 of 10 (claude)
+===============================================================
+All tasks in `docs/streams/TODO-ws.md` are already checked, including `ALL_TASKS_COMPLETE`. There are no unchecked tasks remaining — the stream is fully done. Nothing to do here.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 88%]
+.........                                                                [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+81 passed, 2 warnings in 447.45s (0:07:27)
+--- Verification PASSED ---
+Iteration 6 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 7 of 10 (claude)
+===============================================================
+All tasks are already complete, including `ALL_TASKS_COMPLETE` which is checked. There's nothing left to do — every task in `TODO-ws.md` has been finished:
+
+1. **Harden decode_frame** — done
+2. **Per-client frame rate limiting** — done
+3. **Inference timing** — done
+4. **Migrate to lifespan** — done
+5. **ALL_TASKS_COMPLETE** — marked
+
+All tasks for Stream 1 (ws_server.py) are complete. No further work is needed.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 88%]
+.........                                                                [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+81 passed, 2 warnings in 468.40s (0:07:48)
+--- Verification PASSED ---
+Iteration 7 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 8 of 10 (claude)
+===============================================================
+All tasks in `TODO-ws.md` are already complete, including `ALL_TASKS_COMPLETE` which is marked as `[x]`. There are no remaining unchecked tasks to work on.
+
+The stream is finished — all 4 tasks plus the `ALL_TASKS_COMPLETE` marker have been checked off. No further work is needed.
+
+--- Verification Gate: running pytest ---
+........................................................................ [ 88%]
+.........                                                                [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+81 passed, 2 warnings in 378.66s (0:06:18)
+--- Verification PASSED ---
+grep: /c/Users/nicko/Desktop/beyondbinary/ralph-ws/docs/TODO.md: No such file or directory
+Iteration 8 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 9 of 10 (claude)
+===============================================================
+grep: /c/Users/nicko/Desktop/beyondbinary/ralph-ws/docs/TODO.md: No such file or directory

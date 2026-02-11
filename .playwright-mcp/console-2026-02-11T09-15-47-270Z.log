@@ -1,0 +1,6 @@
+[  646327ms] [ERROR] WebSocket connection to 'ws://localhost:8001/ws/sign-detection' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/_3eecdc1a._.js:632
+[  648373ms] [ERROR] WebSocket connection to 'ws://localhost:8001/ws/sign-detection' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/_3eecdc1a._.js:632
+[  650424ms] [ERROR] WebSocket connection to 'ws://localhost:8001/ws/sign-detection' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/_3eecdc1a._.js:632
+[  652481ms] [ERROR] WebSocket connection to 'ws://localhost:8001/ws/sign-detection' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/_3eecdc1a._.js:632
+[  654518ms] [ERROR] WebSocket connection to 'ws://localhost:8001/ws/sign-detection' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/_3eecdc1a._.js:632
+[  656558ms] [ERROR] WebSocket connection to 'ws://localhost:8001/ws/sign-detection' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/_3eecdc1a._.js:632

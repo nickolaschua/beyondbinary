@@ -1,0 +1,446 @@
+Starting Ralph - Tool: claude - Max iterations: 10
+TODO file: /c/Users/nicko/Desktop/beyondbinary/ralph-training/docs/TODO.md
+Python: /c/Users/nicko/Desktop/beyondbinary/ralph-training/ml/venv/Scripts/python.exe
+
+===============================================================
+  Ralph Iteration 1 of 10 (claude)
+===============================================================
+## Task 1 Complete. Checking remaining tasks...
+
+Two unchecked tasks remain in `TODO-training.md`:
+1. ~~Replace broad exceptions in load_data~~ (done)
+2. **Add --learning_rate CLI arg** (next)
+3. **Add CLI args to verify_data.py** (pending)
+
+Unchecked tasks remain, so I'll stop here as instructed (one task per iteration).
+
+---
+
+**Summary of completed work:**
+
+1. **RED** — Created `ml/tests/test_train_exceptions.py` with 4 tests:
+   - Valid .npy file loads with no skips
+   - Corrupted file (random bytes) is skipped gracefully
+   - Wrong-shape file is skipped gracefully
+   - AST inspection verifies `except (ValueError, OSError, EOFError)` — not bare `Exception`
+
+2. **GREEN** — Changed `except Exception as e:` → `except (ValueError, OSError, EOFError) as e:` in `train_model.py:139`
+
+3. **Infrastructure fix** — Created `ml/conftest.py` to patch `mediapipe.solutions.holistic` for Python 3.13 compatibility (mediapipe 0.10.32 removed the legacy API). This unblocked ALL existing tests — the full suite now runs (66 tests passing).
+
+4. **Commits:**
+   - `18980cc` — `feat(training): replace broad except with specific exceptions in load_data`
+   - `7d49b4a` — `chore(training): mark task done`
+
+--- Verification Gate: running pytest ---
+..................................................................       [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+66 passed, 4 warnings in 182.68s (0:03:02)
+--- Verification PASSED ---
+Iteration 1 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 2 of 10 (claude)
+===============================================================
+Task complete. Checking remaining tasks — there is still one unchecked task: **"Add CLI args to verify_data.py"**. That will be the next iteration.
+
+**Summary of what was done:**
+
+1. **RED**: Wrote `ml/tests/test_train_lr.py` with 3 tests — confirmed failure (`AttributeError: 'Namespace' object has no attribute 'learning_rate'`)
+2. **GREEN**: Added `--learning_rate` arg to `parse_args()` (default 0.001, type float), updated `build_model()` to accept `learning_rate` parameter and use `tf.keras.optimizers.Adam(learning_rate=...)` — all 3 tests pass
+3. **VERIFY**: Full suite passes (69 tests)
+4. **COMMIT**: `feat(training): add --learning_rate CLI arg to train_model.py`
+5. Marked task done in TODO
+
+--- Verification Gate: running pytest ---
+.....................................................................    [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+69 passed, 5 warnings in 153.02s (0:02:33)
+--- Verification PASSED ---
+Iteration 2 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 3 of 10 (claude)
+===============================================================
+## Summary
+
+**Task completed: Add CLI args to verify_data.py**
+
+**TDD cycle:**
+- **RED:** Wrote `ml/tests/test_verify_cli.py` with 3 tests — confirmed `ImportError: cannot import name 'parse_args' from 'verify_data'`
+- **GREEN:** Added `parse_args()` with `--data_path` (default: `DATA_PATH`) and `--min_hands` (default: 15) to `verify_data.py`, wired into `main()`, replaced hardcoded threshold — all 3 tests pass
+- **VERIFY:** Full suite: **72 passed** in 156s
+
+**ALL_TASKS_COMPLETE** — All training pipeline tasks in `TODO-training.md` are now done.
+
+--- Verification Gate: running pytest ---
+........................................................................ [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+72 passed, 5 warnings in 180.90s (0:03:00)
+--- Verification PASSED ---
+Iteration 3 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 4 of 10 (claude)
+===============================================================
+All tasks in `TODO-training.md` are already complete, including `ALL_TASKS_COMPLETE`. There's nothing left to do — the training pipeline stream is fully finished.
+
+--- Verification Gate: running pytest ---
+........................................................................ [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+72 passed, 5 warnings in 205.18s (0:03:25)
+--- Verification PASSED ---
+Iteration 4 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 5 of 10 (claude)
+===============================================================
+All tasks in `TODO-training.md` are already checked, including `ALL_TASKS_COMPLETE`. There are no remaining tasks for me to work on.
+
+The training pipeline stream is fully complete:
+- **Task 1**: Replace broad exceptions in `load_data` — done
+- **Task 2**: Add `--learning_rate` CLI arg — done
+- **Task 3**: Add CLI args to `verify_data.py` — done
+- **ALL_TASKS_COMPLETE** — marked
+
+Nothing left to do here.
+
+--- Verification Gate: running pytest ---
+........................................................................ [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+72 passed, 5 warnings in 210.43s (0:03:30)
+--- Verification PASSED ---
+Iteration 5 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 6 of 10 (claude)
+===============================================================
+All tasks in `TODO-training.md` are already complete, including `ALL_TASKS_COMPLETE`. There are no remaining unchecked tasks to work on.
+
+The training pipeline stream is fully done:
+- **Task 1**: Replace broad exceptions in `load_data` - completed
+- **Task 2**: Add `--learning_rate` CLI arg - completed  
+- **Task 3**: Add CLI args to `verify_data.py` - completed
+- **ALL_TASKS_COMPLETE** - marked
+
+Nothing left to do here.
+
+--- Verification Gate: running pytest ---
+........................................................................ [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+72 passed, 5 warnings in 472.81s (0:07:52)
+--- Verification PASSED ---
+Iteration 6 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 7 of 10 (claude)
+===============================================================
+All tasks in `TODO-training.md` are already checked, including `ALL_TASKS_COMPLETE`. There are no remaining unchecked tasks to work on.
+
+The training pipeline stream is fully complete — all three tasks (replace broad exceptions, add `--learning_rate` CLI arg, add CLI args to `verify_data.py`) have been implemented and the `ALL_TASKS_COMPLETE` marker is set.
+
+--- Verification Gate: running pytest ---
+........................................................................ [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+72 passed, 5 warnings in 548.12s (0:09:08)
+--- Verification PASSED ---
+Iteration 7 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 8 of 10 (claude)
+===============================================================
+All tasks in `TODO-training.md` are already checked, including `ALL_TASKS_COMPLETE`. There are no remaining unchecked tasks for me to work on.
+
+The training pipeline stream is fully complete — all three tasks (broad exception handling, `--learning_rate` CLI arg, and `verify_data.py` CLI args) have been implemented and marked done, and `ALL_TASKS_COMPLETE` has been checked off.
+
+--- Verification Gate: running pytest ---
+........................................................................ [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_train_lr.py::test_build_model_uses_learning_rate
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\keras\src\layers\rnn\rnn.py:199: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+    super().__init__(**kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+72 passed, 5 warnings in 464.12s (0:07:44)
+--- Verification PASSED ---
+Iteration 8 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 9 of 10 (claude)
+===============================================================
+All tasks in `TODO-training.md` are already complete, including `ALL_TASKS_COMPLETE`. There are no unchecked tasks remaining — all three implementation tasks and the completion marker are checked off.
+
+Nothing to do here. The training pipeline stream is fully complete.
+
+--- Verification Gate: running pytest ---
+.............................................................F
+================================== FAILURES ===================================
+____________ TestSpecificExceptions.test_except_clause_is_specific ____________
+C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\tests\test_train_exceptions.py:78: in test_except_clause_is_specific
+    ???
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\inspect.py:1285: in getsource
+    lines, lnum = getsourcelines(object)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\inspect.py:1267: in getsourcelines
+    lines, lnum = findsource(object)
+                  ^^^^^^^^^^^^^^^^^^
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\Lib\inspect.py:1096: in findsource
+    raise OSError('could not get source code')
+E   OSError: could not get source code
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-training\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_train_exceptions.py::TestSpecificExceptions::test_except_clause_is_specific
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 61 passed, 4 warnings in 311.57s (0:05:11)
+
+VERIFICATION FAILED: tests are broken after iteration 9
+Ralph is stopping to prevent further damage.
+Review the last commit and fix manually.

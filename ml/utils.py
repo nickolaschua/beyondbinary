@@ -29,10 +29,11 @@ if os.path.isfile(_ACTIONS_PATH):
     ACTIONS = np.load(_ACTIONS_PATH)
 else:
     ACTIONS = np.array(['Hello', 'Thank_You', 'Help', 'Yes', 'No',
-                        'Please', 'Sorry', 'I_Love_You', 'Stop', 'More'])
+                        'Please', 'Sorry', 'I_Love_You', 'Stop', 'More',
+                        'How_Are_You', 'Good'])
 
 SEQUENCE_LENGTH = 30
-NUM_SEQUENCES = 30
+NUM_SEQUENCES = 90
 
 DATA_PATH = os.path.join(_ML_DIR, 'MP_Data')
 MODEL_PATH = os.path.join(_ML_DIR, 'models', 'action_model.h5')

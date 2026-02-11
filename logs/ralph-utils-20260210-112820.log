@@ -1,0 +1,418 @@
+Starting Ralph - Tool: claude - Max iterations: 10
+TODO file: /c/Users/nicko/Desktop/beyondbinary/ralph-utils/docs/TODO.md
+Python: /c/Users/nicko/Desktop/beyondbinary/ralph-utils/ml/venv/Scripts/python.exe
+
+===============================================================
+  Ralph Iteration 1 of 10 (claude)
+===============================================================
+All tasks for Stream 2 (utils.py) are complete. Here's a summary of what was done:
+
+### Completed Tasks
+
+1. **Runtime keypoint shape assertion** (`25c0177`)
+   - Added `assert result.shape == (1662,)` in `extract_keypoints()` before returning
+   - Tests: normal extraction passes, monkeypatched wrong shape raises `AssertionError`
+
+2. **Resolve DATA_PATH relative to `__file__`** (`bc5eea0`)
+   - Changed `DATA_PATH = os.path.join('MP_Data')` → `DATA_PATH = os.path.join(_ML_DIR, 'MP_Data')`
+   - Tests: DATA_PATH is absolute, ends with 'MP_Data', shares parent with MODEL_PATH
+
+3. **Type hints on all public functions** (`408a2f7`)
+   - Added `np.ndarray`, `Any`, `None`, and `tuple` annotations to `mediapipe_detection`, `draw_landmarks`, `extract_keypoints`
+   - Tests: `inspect.signature()` verifies annotations exist on all public functions
+
+**Final test count: 71 tests, all passing.**
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 134.59s (0:02:14)
+--- Verification PASSED ---
+Iteration 1 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 2 of 10 (claude)
+===============================================================
+All tasks in `TODO-utils.md` are already checked, including `ALL_TASKS_COMPLETE`. There's nothing left to do — the stream 2 (utils.py) work is fully complete.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 108.65s (0:01:48)
+--- Verification PASSED ---
+Iteration 2 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 3 of 10 (claude)
+===============================================================
+All tasks in `TODO-utils.md` are already complete, including `ALL_TASKS_COMPLETE` which is marked as `[x]`. There are no unchecked tasks remaining.
+
+The stream 2 (utils.py) work is fully done. All three tasks plus the completion marker have been checked off:
+
+1. **Runtime keypoint shape assertion** - Done
+2. **Resolve DATA_PATH relative to `__file__`** - Done
+3. **Add type hints to all public functions** - Done
+4. **ALL_TASKS_COMPLETE** - Marked
+
+No further work is needed for this stream.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 132.67s (0:02:12)
+--- Verification PASSED ---
+Iteration 3 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 4 of 10 (claude)
+===============================================================
+All tasks in `TODO-utils.md` are already complete, including `ALL_TASKS_COMPLETE` which is checked off. There are no remaining unchecked tasks to work on.
+
+The stream 2 (utils.py) work is fully done:
+- **Shape assertion** in `extract_keypoints()` — done
+- **DATA_PATH relative to `__file__`** — done  
+- **Type hints on all public functions** — done
+- **ALL_TASKS_COMPLETE** — marked
+
+No further action needed for this stream.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 116.59s (0:01:56)
+--- Verification PASSED ---
+Iteration 4 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 5 of 10 (claude)
+===============================================================
+All tasks in the TODO are already complete, including `ALL_TASKS_COMPLETE`. There's nothing left to do for this stream — all three tasks have been checked off and the completion marker is set.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 115.43s (0:01:55)
+--- Verification PASSED ---
+Iteration 5 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 6 of 10 (claude)
+===============================================================
+All tasks in `TODO-utils.md` are already complete, including `ALL_TASKS_COMPLETE` which is checked. There are no unchecked tasks remaining.
+
+The stream 2 (utils.py) work is fully done. All tasks have been completed in previous sessions:
+
+1. **Runtime keypoint shape assertion** - Done
+2. **Resolve DATA_PATH relative to __file__** - Done
+3. **Add type hints to all public functions** - Done
+4. **ALL_TASKS_COMPLETE** - Marked
+
+No further work is needed for this stream.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 117.06s (0:01:57)
+--- Verification PASSED ---
+Iteration 6 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 7 of 10 (claude)
+===============================================================
+All tasks in `TODO-utils.md` are already checked, including `ALL_TASKS_COMPLETE`. There's nothing left to do — all tasks for Stream 2 (utils.py) have been completed in previous iterations.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 128.65s (0:02:08)
+--- Verification PASSED ---
+Iteration 7 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 8 of 10 (claude)
+===============================================================
+All tasks in the TODO are already checked, including `ALL_TASKS_COMPLETE`. There's nothing left to do — all tasks in Stream 2 (utils.py) have been completed in previous sessions.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 143.75s (0:02:23)
+--- Verification PASSED ---
+Iteration 8 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 9 of 10 (claude)
+===============================================================
+All tasks in the TODO are already checked, including `ALL_TASKS_COMPLETE`. There's nothing left to do — all tasks for Stream 2 (utils.py) have been completed in previous sessions.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 156.91s (0:02:36)
+--- Verification PASSED ---
+Iteration 9 complete. Continuing...
+
+===============================================================
+  Ralph Iteration 10 of 10 (claude)
+===============================================================
+All tasks in `TODO-utils.md` are already checked, including `ALL_TASKS_COMPLETE`. There's nothing left to do — all tasks for Stream 2 (utils.py) have been completed in previous sessions.
+
+--- Verification Gate: running pytest ---
+.......................................................................  [100%]
+============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.MessageMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: Type google._upb._message.ScalarMapContainer uses PyType_Spec with a metaclass that has custom tp_new. This is deprecated and will no longer be allowed in Python 3.14.
+
+ws_server.py:61
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\ws_server.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv\Lib\site-packages\fastapi\applications.py:4579
+  C:\Users\nicko\Desktop\beyondbinary\ralph-utils\ml\venv\Lib\site-packages\fastapi\applications.py:4579: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+71 passed, 4 warnings in 113.82s (0:01:53)
+--- Verification PASSED ---
+Iteration 10 complete. Continuing...
+
+Ralph reached max iterations (10) without completing all tasks.
+Check docs/TODO.md for remaining items.

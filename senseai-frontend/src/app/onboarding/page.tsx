@@ -28,6 +28,7 @@ import {
 } from "@/lib/profile";
 import { API_URL } from "@/lib/constants";
 import { speakGuidance } from "@/lib/tts";
+import { postTts } from "@/lib/api";
 
 interface BasicSpeechRecognition {
   lang: string;
@@ -60,6 +61,9 @@ const STEP_ICONS = [UserRound, SlidersHorizontal, Wrench, MapPinned];
 const INTRO_MESSAGE = "Hey there! I am SenseAI. I am here to help you with our onboarding process!";
 const TEXT_SIZE_STEPS = [90, 100, 110, 120, 130, 140];
 const TEXT_SIZE_LABELS = ["Compact", "Default", "Large", "X-Large", "XX-Large", "Max"];
+
+// Rachel's voice ID - calm, gentle female voice for onboarding
+const ONBOARDING_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
 const PROFILE_ICON: Record<UserProfileId, typeof EyeOff> = {
   blind: EyeOff,
@@ -114,9 +118,25 @@ export default function OnboardingPage() {
     showIntroRef.current = showIntro;
   }, [showIntro]);
 
-  const speakGuide = (message: string) => {
+  /**
+   * Speak onboarding messages using ElevenLabs with Rachel's gentle voice.
+   * Falls back to browser Web Speech API if backend is unavailable.
+   */
+  const speakGuide = async (message: string) => {
     if (!settings.audioPrompts) return;
-    speakGuidance(message);
+
+    try {
+      // Use ElevenLabs with Rachel's gentle voice
+      const blob = await postTts(message, ONBOARDING_VOICE_ID);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.onerror = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch {
+      // Fallback to browser Web Speech API if backend unavailable
+      speakGuidance(message);
+    }
   };
 
   const applySettings = (next: UserSettings) => {
@@ -141,7 +161,7 @@ export default function OnboardingPage() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
       setVoiceStatus("Voice selection is not supported in this browser.");
-      speakGuidance("Voice selection is not supported in this browser.");
+      speakGuide("Voice selection is not supported in this browser.");
       return;
     }
 
@@ -158,7 +178,7 @@ export default function OnboardingPage() {
       if (picked) {
         chooseProfile(picked);
         setVoiceStatus(`Selected profile: ${picked}`);
-        speakGuidance(`Profile selected: ${picked}`);
+        speakGuide(`Profile selected: ${picked}`);
       } else {
         setVoiceStatus(`No match from: ${transcript}`);
       }
@@ -227,10 +247,26 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (!showIntro || introAudioQueuedRef.current || !settings.audioPrompts) return;
     introAudioQueuedRef.current = true;
-    speakGuidance(INTRO_MESSAGE);
+
+    // Use ElevenLabs with Rachel's voice for intro
+    const playIntro = async () => {
+      try {
+        const blob = await postTts(INTRO_MESSAGE, ONBOARDING_VOICE_ID);
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => URL.revokeObjectURL(url);
+        audio.onerror = () => URL.revokeObjectURL(url);
+        await audio.play();
+      } catch {
+        // Fallback to Web Speech API
+        speakGuidance(INTRO_MESSAGE);
+      }
+    };
+
+    playIntro();
 
     const replayOnFirstInteraction = () => {
-      speakGuidance(INTRO_MESSAGE);
+      playIntro();
       window.removeEventListener("pointerdown", replayOnFirstInteraction);
       window.removeEventListener("keydown", replayOnFirstInteraction);
     };
@@ -300,6 +336,71 @@ export default function OnboardingPage() {
 
       if (text.includes("finish setup") || text.includes("finish")) {
         if (stepRef.current === 3) goNext();
+        return;
+      }
+
+      // Step 2 (index 1): Accessibility — text size and high contrast
+      if (stepRef.current === 1) {
+        console.log(`[Voice] Processing accessibility command: "${text}"`);
+        const s = settingsRef.current;
+        // Text size: compact, default, large, x-large, xx-large, max
+        if (text.includes("compact")) {
+          console.log("[Voice] Setting text size to compact");
+          applySettings({ ...s, textScale: clampTextScale(90) });
+          speakGuide("Text size set to compact");
+          return;
+        }
+        // "default" alone or with "text"/"size" → 100%
+        if (
+          text.trim() === "default" ||
+          text.includes("default text") ||
+          text.includes("text default") ||
+          (text.includes("default") && (text.includes("text") || text.includes("size")))
+        ) {
+          applySettings({ ...s, textScale: clampTextScale(100) });
+          speakGuide("Text size set to default");
+          return;
+        }
+        if (
+          (text.includes("large text") || text.includes("text large")) &&
+          !text.includes("x-large") &&
+          !text.includes("xx-large")
+        ) {
+          applySettings({ ...s, textScale: clampTextScale(110) });
+          speakGuide("Text size set to large");
+          return;
+        }
+        if (text.includes("large") && !text.includes("x-large") && !text.includes("xx-large") && !text.includes("extra")) {
+          applySettings({ ...s, textScale: clampTextScale(110) });
+          speakGuide("Text size set to large");
+          return;
+        }
+        if (text.includes("x-large") || text.includes("x large") || (text.includes("extra") && text.includes("large"))) {
+          applySettings({ ...s, textScale: clampTextScale(120) });
+          speakGuide("Text size set to extra large");
+          return;
+        }
+        if (text.includes("xx-large") || text.includes("xx large")) {
+          applySettings({ ...s, textScale: clampTextScale(130) });
+          speakGuide("Text size set to double extra large");
+          return;
+        }
+        if (text.includes("max")) {
+          applySettings({ ...s, textScale: clampTextScale(140) });
+          speakGuide("Text size set to maximum");
+          return;
+        }
+        // High contrast
+        if (text.includes("contrast on") || text.includes("enable contrast") || text.includes("high contrast on")) {
+          applySettings({ ...s, highContrast: true });
+          speakGuide("High contrast enabled");
+          return;
+        }
+        if (text.includes("contrast off") || text.includes("disable contrast") || text.includes("high contrast off")) {
+          applySettings({ ...s, highContrast: false });
+          speakGuide("High contrast disabled");
+          return;
+        }
       }
     };
 
@@ -308,6 +409,7 @@ export default function OnboardingPage() {
       if (lastIndex < 0) return;
       const transcript = event.results[lastIndex]?.[0]?.transcript?.trim();
       if (!transcript) return;
+      console.log(`[Voice] Heard: ${transcript} (Step: ${stepRef.current})`);
       setVoiceStatus(`Heard: ${transcript}`);
       handleCommand(transcript);
     };

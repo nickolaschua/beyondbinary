@@ -69,6 +69,7 @@ for (const [char, pattern] of Object.entries(BRAILLE_MAP)) {
   BRAILLE_TO_CHAR[patternKey(pattern)] = char;
 }
 
+/** Return the character (or space) that a braille cell represents, for display under the cell. */
 export function brailleCellToCharacter(pattern: BrailleCellPattern): string {
   return BRAILLE_TO_CHAR[patternKey(pattern)] ?? " ";
 }

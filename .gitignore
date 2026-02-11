@@ -1,2 +1,38 @@
 # Claude
 .claude
+.planning
+
+# Environment
+.env
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Data / Models (large files)
+ml/MP_Data/
+ml/MP_Data_v2.zip
+ml/training_data.npz
+ml/models/
+
+# Test caches
+.pytest_cache/
+
+# Logs
+logs/

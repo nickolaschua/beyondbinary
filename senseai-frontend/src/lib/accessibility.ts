@@ -7,7 +7,8 @@ export function clampTextScale(value: number): number {
 
 export function applyTextScale(scale: number): void {
   if (typeof document === "undefined") return;
-  document.documentElement.style.fontSize = `${clampTextScale(scale)}%`;
+  const value = clampTextScale(scale);
+  document.documentElement.style.setProperty("--app-text-scale", String(value));
 }
 
 export function applyHighContrast(enabled: boolean): void {

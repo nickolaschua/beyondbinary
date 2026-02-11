@@ -1,124 +1,170 @@
 # BeyondBinary
 
-## ML Pipeline (SenseAI)
+Accessibility-first communication platform that bridges the gap between deaf, blind, deafblind, and mute users through real-time AI. Combines ASL sign language detection, speech-to-text, text-to-speech, emotional tone analysis, braille output, and peer-to-peer video calling into a single live workspace.
 
-ASL sign language detection pipeline: webcam frames → MediaPipe Holistic landmarks → LSTM classification → WebSocket predictions.
+## The Problem
 
-### Quick Start
+Current assistive technologies focus on single-modality solutions — speech-to-text, basic sign recognition, or simple navigation aids — that don't address the complex, multi-layered needs of users with disabilities. These fragmented tools fail to account for regional sign language variations, contextual nuances, and the reality that many users need multiple modalities working together simultaneously.
+
+BeyondBinary tackles this by combining vision, audio, text, haptics, and AI into one cohesive system that adapts to individual needs. A deaf user gets large captions with emotional tone indicators. A blind user gets speech narration and braille. A deafblind user gets both. Rather than forcing users to stitch together separate tools, BeyondBinary provides a single workspace where all modalities work in concert.
+
+## How It Works
+
+```
+                    ┌──────────────────────────────────────────┐
+                    │           Live Workspace (Frontend)       │
+                    │                                          │
+                    │  ┌─────────┐  ┌──────────┐  ┌────────┐  │
+                    │  │ Webcam  │  │ Captions  │  │Braille │  │
+                    │  │ + Sign  │  │ + Tone    │  │Display │  │
+                    │  │Detection│  │ Feed      │  │(6-dot) │  │
+                    │  └────┬────┘  └─────┬─────┘  └───┬────┘  │
+                    │       │             │            │        │
+                    └───────┼─────────────┼────────────┼────────┘
+                            │             │            │
+              ┌─────────────▼─┐     ┌─────▼──────┐    │
+              │  ML Server    │     │  Backend    │    │
+              │  MediaPipe →  │     │  Groq STT   │    │
+              │  LSTM → Sign  │     │  Hume Tone  │    │
+              │  (port 8765)  │     │  11Labs TTS │    │
+              └───────────────┘     │  Claude AI  │    │
+                                    │  (port 8000)│    │
+                                    └─────────────┘    │
+                                          │            │
+                                    ┌─────▼────────────▼────┐
+                                    │   UEB Grade 1 Braille  │
+                                    │   Translation Engine   │
+                                    └────────────────────────┘
+```
+
+## Accessibility Profiles
+
+Users select a profile at onboarding. Each profile activates a different combination of input/output channels:
+
+| Profile | Receives | Sends | Special Features |
+|---------|----------|-------|------------------|
+| **Deaf** | Large captions, sign interpretation, tone indicators | Text, message cards | Tone emoji badges (😊 😠 😟), visual-first layout |
+| **Blind** | Speech narration, braille output, tone identification | Text-to-speech | Audio guidance on every page, ElevenLabs voice |
+| **Deafblind** | Braille (always-on), optional audio, tone labels | Text-to-speech, message cards | 12-cell braille display, extra-large 5xl text |
+| **Mute** | Captions, sign interpretation, audio context | Text-to-speech, text output | Quick reply buttons for fast responses |
+
+## Features
+
+### ASL Sign Detection
+Real-time detection of 12 ASL signs via webcam at 5 FPS:
+
+> Hello, Thank You, Help, Yes, No, Please, Sorry, I Love You, Stop, More, How Are You, Good
+
+Pipeline: webcam frame → MediaPipe Holistic (1662 landmarks) → 30-frame sliding window → LSTM classifier → stability filter (5 consecutive frames) → confirmed sign.
+
+### Voice + Tone Intelligence
+- **Speech-to-text** via Groq Whisper (~200ms latency), OpenAI fallback
+- **Emotional tone analysis** via Hume AI prosody (~300ms), AFINN sentiment fallback
+- **Text-to-speech** via ElevenLabs multilingual v2, Web Speech API fallback
+- **Quick replies** generated by Claude based on conversation context
+
+### Braille Display
+Visual 6-dot UEB Grade 1 braille cells rendered in the browser. 12-cell scrolling display converts conversation text to braille in real-time. Supports a–z, 0–9, and common punctuation with number indicator prefix.
+
+### Video Calling
+WebRTC peer-to-peer video with STUN/TURN relay. Signaling through backend WebSocket. Camera toggle, local/remote stream display.
+
+## Tech Stack
+
+| Layer | Technology | Port |
+|-------|-----------|------|
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4 | 3000 |
+| Backend | FastAPI, Python 3.12 | 8000 |
+| ML Server | TensorFlow 2.16, MediaPipe 0.10.21, LSTM | 8765 |
+
+### External Services
+
+| Service | Provider | Purpose | Fallback |
+|---------|----------|---------|----------|
+| Speech-to-text | Groq Whisper | Audio transcription | OpenAI Whisper |
+| Text-to-speech | ElevenLabs | Voice synthesis | Web Speech API |
+| Tone analysis | Hume AI | Prosody/emotion detection | AFINN sentiment |
+| AI intelligence | Anthropic Claude | Quick replies, jargon simplification | — |
+
+## Quick Start
+
+### 1. ML Server
 
 ```bash
-# Create Python 3.12 venv (system Python 3.13 is NOT compatible with MediaPipe)
+# Requires Python 3.12 (3.13 is NOT compatible with MediaPipe)
 py -3.12 -m venv ml/venv
-
-# Install dependencies
 ml\venv\Scripts\pip.exe install -r ml/requirements.txt
 
 # Verify environment
 cd ml && venv\Scripts\python.exe test_setup.py
 
-# Start WebSocket server
+# Start WebSocket server on port 8765
 cd ml && venv\Scripts\python.exe ws_server.py
 ```
 
-### Dependencies
-
-All versions are pinned in `ml/requirements.txt`. The version constraints form a chain — do not upgrade individual packages without checking compatibility.
-
-| Package | Version | Why This Version |
-|---------|---------|------------------|
-| **mediapipe** | 0.10.21 | Last version with `mp.solutions.holistic` legacy API. v0.10.30+ removed it. |
-| **tensorflow** | 2.16.2 | mediapipe 0.10.21 requires `numpy<2`. TF 2.17+ requires `numpy>=2`. |
-| **numpy** | 1.26.4 | Constrained by mediapipe's `numpy<2` requirement. |
-| **opencv-python** | 4.11.0.86 | Compatible with numpy 1.26.4. |
-| **fastapi** | 0.128.6 | WebSocket server framework. |
-| **uvicorn** | 0.40.0 | ASGI server for FastAPI. |
-| **websockets** | 16.0 | WebSocket client for testing. |
-| **python-multipart** | 0.0.22 | Form data handling for FastAPI. |
-| **scikit-learn** | 1.6.1 | Train/test splitting, evaluation metrics. |
-| **matplotlib** | 3.10.8 | Training visualization, confusion matrices. |
-
-**Python version:** 3.12 only. MediaPipe 0.10.21 supports 3.9-3.12. System Python 3.13 is not compatible.
-
----
-
-## Overnight Ralph Loop (Docker)
-
-Ralph is an autonomous AI agent loop that runs Claude Code repeatedly, completing one task per iteration from `docs/TODO.md` until all tasks are done.
-
-### Setup
-
-#### 1. Fill in your task list
-
-Edit `docs/PRD.md` with your project requirements and context.
-
-Edit `docs/TODO.md` with your task list as checkboxes:
-
-```markdown
-- [ ] Implement feature X
-- [ ] Add tests for feature X
-- [ ] Update documentation
-- [ ] ALL_TASKS_COMPLETE
-```
-
-Keep `- [ ] ALL_TASKS_COMPLETE` as the **last line**. Ralph marks it `[x]` when everything above is done, then the loop exits.
-
-#### 2. Set environment variables
-
-Create a `.env` file (not committed to git):
+### 2. Backend
 
 ```bash
-# Claude API credentials
-ANTHROPIC_API_KEY=sk-ant-...
+cd backend
+python -m venv venv
+venv\Scripts\pip.exe install -r requirements.txt
+
+# Copy .env.example and fill in your API keys
+cp .env.example .env
+# Required: GROQ_API_KEY, ELEVENLABS_API_KEY, ANTHROPIC_API_KEY, HUME_API_KEY
+# Optional: OPENAI_API_KEY (STT fallback)
+
+python run_dev.sh
 ```
 
-#### 3. Run the loop
-
-**Single iteration** (test run):
+### 3. Frontend
 
 ```bash
-make ralph-once
+cd senseai-frontend
+npm install
+npm run dev
 ```
 
-**Overnight / AFK run** (20 iterations):
+Open `http://localhost:3000` → select your accessibility profile → enter live workspace.
+
+## Project Structure
+
+```
+beyondbinary/
+├── ml/                          # ASL detection pipeline
+│   ├── ws_server.py             # WebSocket inference server
+│   ├── inference.py             # Real-time prediction engine
+│   ├── landmarks.py             # MediaPipe landmark extraction
+│   ├── preprocessing.py         # Data augmentation + preprocessing
+│   ├── train_model.py           # LSTM training script
+│   ├── model_architecture.py    # Keras model definition
+│   ├── config.py                # Signs, thresholds, paths
+│   └── tests/                   # 214+ pytest tests
+├── backend/                     # API gateway + service orchestration
+│   ├── app/
+│   │   ├── main.py              # FastAPI app entry point
+│   │   ├── config.py            # Environment + settings
+│   │   ├── routers/             # Endpoint handlers (STT, TTS, tone, braille, conversation)
+│   │   └── services/            # External API integrations (Groq, Hume, ElevenLabs, Claude)
+│   ├── .env.example             # API key template
+│   └── requirements.txt
+├── senseai-frontend/            # Accessible UI
+│   ├── src/app/                 # Next.js pages (onboarding, session, settings)
+│   ├── src/components/          # React components (LiveWorkspace, BrailleCell, VideoCall, ...)
+│   ├── src/hooks/               # useWebSocket, useWebRTC, useVoiceCommands
+│   └── src/lib/                 # API client, profile config, braille mapping
+└── docs/
+    ├── WEBSOCKET.md             # ML WebSocket protocol spec
+    └── BACKEND_INTEGRATION.md   # Frontend ↔ Backend integration guide
+```
+
+## Running Tests
 
 ```bash
-make ralph-afk
+# ML pipeline (214+ tests)
+ml\venv\Scripts\python.exe -m pytest ml/tests/ -v
 ```
 
-Logs are saved to `logs/ralph-YYYYMMDD.log`.
+## License
 
-#### 4. Stop the loop
-
-```bash
-docker compose down
-```
-
-Or press `Ctrl+C` in the terminal running it.
-
-### How it works
-
-Each iteration:
-1. Claude Code reads `docs/TODO.md` and picks the first unchecked task
-2. Implements it, runs verification
-3. Commits the changes
-4. Marks the task as done in `docs/TODO.md`
-5. Repeats until `ALL_TASKS_COMPLETE` is checked
-
-### Claude Code flags
-
-The loop uses `claude --dangerously-skip-permissions --print` for unattended operation:
-- `--dangerously-skip-permissions` auto-accepts all file edits and tool calls (no interactive prompts)
-- `--print` outputs results to stdout (non-interactive mode)
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `scripts/ralph/ralph.sh` | The bash loop that spawns fresh Claude instances |
-| `scripts/ralph/CLAUDE.md` | Prompt template fed to Claude each iteration |
-| `docs/PRD.md` | Product requirements (context for Claude) |
-| `docs/TODO.md` | Task list with checkboxes (the work queue) |
-| `vendor/ralph-loop/` | Vendored original ralph repo for reference |
-| `Dockerfile` | Container image with bash, git, curl, node, python |
-| `docker-compose.yml` | Mounts repo at /workspace, runs as non-root |
-| `Makefile` | `ralph-once` and `ralph-afk` targets |
+All rights reserved.

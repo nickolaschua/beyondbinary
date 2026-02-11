@@ -4,6 +4,9 @@
 
 import { postTts } from "./api";
 
+/** Minimum bytes for audio blob URLs (avoids ERR_REQUEST_RANGE_NOT_SATISFIABLE on empty/tiny blobs). */
+const MIN_AUDIO_BYTES = 32;
+
 /**
  * Speak short guidance/hints using the browser's Web Speech API.
  * Use for "Play audio guidance" and page-load hints so they work without the backend.
@@ -32,18 +35,39 @@ export function speakGuidance(text: string): void {
 
 export function speakText(text: string, baseUrl?: string): void {
   if (typeof window === "undefined") return;
-  if (!text.trim()) return;
+  const toSpeak = text.trim();
+  if (!toSpeak) return;
 
-  postTts(text.trim(), null, baseUrl)
+  function useBrowserTts(): void {
+    speakGuidance(toSpeak);
+  }
+
+  postTts(toSpeak, null, baseUrl)
     .then((blob) => {
+      // Avoid creating blob URLs for empty/tiny responses (prevents ERR_REQUEST_RANGE_NOT_SATISFIABLE)
+      if (!blob || blob.size < MIN_AUDIO_BYTES) {
+        useBrowserTts();
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.onended = () => URL.revokeObjectURL(url);
-      audio.onerror = () => URL.revokeObjectURL(url);
-      audio.play().catch(() => {});
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        useBrowserTts();
+      };
+      audio
+        .play()
+        .then(() => {})
+        .catch(() => {
+          // Autoplay blocked or playback failed; use browser TTS
+          URL.revokeObjectURL(url);
+          useBrowserTts();
+        });
     })
     .catch(() => {
-      // Backend TTS failed; no fallback
+      // Backend TTS failed (network, 5xx, etc.); use browser TTS
+      useBrowserTts();
     });
 }
 
@@ -52,9 +76,10 @@ export function speakText(text: string, baseUrl?: string): void {
  * Returns the Audio element so caller can chain or wait for 'ended'.
  */
 export function playTtsChunk(audioBase64: string): HTMLAudioElement | null {
-  if (typeof window === "undefined" || !audioBase64) return null;
+  if (typeof window === "undefined" || !audioBase64?.trim()) return null;
   try {
-    const binary = atob(audioBase64);
+    const binary = atob(audioBase64.trim());
+    if (binary.length < MIN_AUDIO_BYTES) return null;
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], { type: "audio/mpeg" });

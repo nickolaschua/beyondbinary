@@ -27,14 +27,8 @@ async def text_to_speech(request: TTSRequest):
         voice_id=request.voice_id,
     )
 
-    # No audio (e.g. ElevenLabs quota exceeded): return empty so frontend uses browser TTS
     if not audio_bytes:
-        return Response(
-            status_code=200,
-            content=b"",
-            media_type="audio/mpeg",
-            headers={"X-TTS-Fallback": "browser", "Cache-Control": "no-cache"},
-        )
+        return Response(status_code=500, content="TTS generation failed")
 
     return Response(
         content=audio_bytes,

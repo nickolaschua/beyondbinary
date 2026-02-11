@@ -28,7 +28,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — phone compatibility: allow mobile PWA origins + network access
+# CORS — phone compatibility: allow mobile PWA origins
 _origins = ["*"]
 if settings.FRONTEND_ORIGIN:
     _origins = [
@@ -36,7 +36,6 @@ if settings.FRONTEND_ORIGIN:
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
-        "http://10.91.174.93:3000",
         "capacitor://localhost",
         "ionic://localhost",
     ]

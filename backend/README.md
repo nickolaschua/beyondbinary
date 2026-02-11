@@ -9,13 +9,10 @@ Built with FastAPI | WebSockets | AI Services | Mobile-Ready
 ## 🚀 Quick Start
 
 ```bash
-# 1. Start the backend (allows network access)
+# 1. Start the backend
 cd backend
 source venv/bin/activate
-./run_dev.sh
-
-# Or manually:
-# uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn app.main:app --reload
 
 # 2. Open test interface
 open test_frontend.html
@@ -23,11 +20,19 @@ open test_frontend.html
 # 3. Click "Start Recording" and speak!
 ```
 
-**Access URLs:**
-- Local: http://localhost:8000
-- Network: http://10.91.174.93:8000
-
 **The backend is already running!** Just open the test page and try it out.
+
+### Running with HTTPS (for SenseAI frontend + camera / remote connections)
+
+When the frontend is served over HTTPS, the backend must use HTTPS/WSS too (browsers block mixed content). Use the same mkcert certs as the frontend:
+
+```bash
+cd backend
+source venv/bin/activate
+./run_https.sh
+```
+
+Requires `localhost+3-key.pem` and `localhost+3.pem` in `senseai-frontend/` (run `mkcert localhost 127.0.0.1 ::1` there first). Then use `https://YOUR_IP:8000` and `wss://YOUR_IP:8000` in the live page URL (or pass `api=` / `ws=` with https/wss; the frontend will upgrade them when the page is HTTPS).
 
 ---
 

@@ -265,25 +265,27 @@ async def conversation_ws(websocket: WebSocket):
 
                 print(f"[WebRTC] {client_id} joined room {room_id}. Room now has {len(_room_registry[room_id])} peers.")
 
-                # Notify this connection about existing peers
+                # Notify this connection about existing peers (new joiner = answerer, do not create offer)
                 for peer in existing_peers:
                     try:
                         print(f"[WebRTC] Notifying {client_id} about existing peer {peer['client_id']}")
                         await websocket.send_json({
                             "type": "peer_joined",
                             "peer_id": peer["client_id"],
+                            "create_offer": False,
                         })
                     except Exception as e:
                         print(f"[WebRTC] Error notifying about existing peer: {e}")
                         continue
 
-                # Notify existing peers about this new connection
+                # Notify existing peers about this new connection (existing = offerer, create offer)
                 for peer in existing_peers:
                     try:
                         print(f"[WebRTC] Notifying {peer['client_id']} about new peer {client_id}")
                         await peer["ws"].send_json({
                             "type": "peer_joined",
                             "peer_id": client_id,
+                            "create_offer": True,
                         })
                     except Exception as e:
                         print(f"[WebRTC] Error notifying peer: {e}")

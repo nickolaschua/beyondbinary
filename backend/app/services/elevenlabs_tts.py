@@ -59,7 +59,11 @@ async def text_to_speech_bytes(
         return audio_bytes
 
     except Exception as e:
-        print(f"ElevenLabs TTS error: {e}")
+        err_str = str(e).lower()
+        if "quota" in err_str or "credits" in err_str:
+            print("ElevenLabs quota exceeded; frontend will use browser TTS.")
+        else:
+            print(f"ElevenLabs TTS error: {e}")
         return b""
 
 
@@ -93,5 +97,9 @@ def text_to_speech_stream(
                 yield chunk
 
     except Exception as e:
-        print(f"ElevenLabs TTS stream error: {e}")
+        err_str = str(e).lower()
+        if "quota" in err_str or "credits" in err_str:
+            print("ElevenLabs quota exceeded (stream); frontend will use browser TTS.")
+        else:
+            print(f"ElevenLabs TTS stream error: {e}")
         return

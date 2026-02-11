@@ -30,7 +30,7 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
 
-from utils import ACTIONS, NUM_SEQUENCES, SEQUENCE_LENGTH
+from utils import ACTIONS, NUM_SEQUENCES, SEQUENCE_LENGTH, NUM_FEATURES, strip_face_features, normalize_frame
 from augment import augment_dataset
 
 # Set random seeds for reproducibility
@@ -48,7 +48,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-NUM_FEATURES = 1662  # pose(132) + face(1404) + lh(63) + rh(63)
+RAW_FEATURES = 1662  # pose(132) + face(1404) + lh(63) + rh(63)
+# NUM_FEATURES (258) imported from utils — pose(132) + lh(63) + rh(63)
 
 
 def parse_args():
@@ -63,13 +64,13 @@ def parse_args():
         help="Path to the MP_Data directory (default: ../MP_Data relative to script)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=200, help="Maximum training epochs (default: 200)"
+        "--epochs", type=int, default=500, help="Maximum training epochs (default: 500)"
     )
     parser.add_argument(
         "--batch_size", type=int, default=16, help="Training batch size (default: 16)"
     )
     parser.add_argument(
-        "--patience", type=int, default=30, help="EarlyStopping patience (default: 30)"
+        "--patience", type=int, default=50, help="EarlyStopping patience (default: 50)"
     )
     parser.add_argument(
         "--test_size",
@@ -80,8 +81,8 @@ def parse_args():
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=0.001,
-        help="Adam optimizer learning rate (default: 0.001)",
+        default=0.0003,
+        help="Adam optimizer learning rate (default: 0.0003)",
     )
     parser.add_argument(
         "--output_dir",
@@ -92,8 +93,8 @@ def parse_args():
     parser.add_argument(
         "--augment",
         type=int,
-        default=5,
-        help="Augmentation multiplier per sample (default: 5, set 0 to disable)",
+        default=3,
+        help="Augmentation multiplier per sample (default: 3, set 0 to disable)",
     )
     parser.add_argument(
         "--no_mirror",
@@ -144,12 +145,12 @@ def load_data(data_path: str):
                     break
                 try:
                     frame = np.load(frame_path)
-                    if frame.shape != (NUM_FEATURES,):
+                    if frame.shape != (RAW_FEATURES,):
                         logger.warning(
                             "Unexpected shape %s in %s (expected (%d,))",
                             frame.shape,
                             frame_path,
-                            NUM_FEATURES,
+                            RAW_FEATURES,
                         )
                         valid = False
                         break
@@ -172,13 +173,25 @@ def load_data(data_path: str):
     X = np.array(sequences)
     y_raw = np.array(labels)
 
+    # Strip face features: [pose, face, lh, rh] (1662) -> [pose, lh, rh] (258)
+    X_stripped = np.zeros((X.shape[0], X.shape[1], NUM_FEATURES))
+    for i in range(X.shape[0]):
+        for f in range(X.shape[1]):
+            X_stripped[i, f] = strip_face_features(X[i, f])
+    X = X_stripped
+
+    # Normalize landmarks: center on nose, scale by shoulder width
+    for i in range(X.shape[0]):
+        for f in range(X.shape[1]):
+            X[i, f] = normalize_frame(X[i, f])
+
     # One-hot encode
     from tensorflow.keras.utils import to_categorical
 
     y = to_categorical(y_raw, num_classes=len(ACTIONS))
 
     logger.info("Loaded %d sequences, skipped %d", len(sequences), skipped)
-    logger.info("X shape: %s", X.shape)
+    logger.info("X shape (face stripped + normalized): %s", X.shape)
     logger.info("y shape: %s", y.shape)
 
     # Report per-class counts
@@ -194,35 +207,23 @@ def load_data(data_path: str):
 # ---------------------------------------------------------------------------
 def build_model(learning_rate: float = 0.001):
     """
-    Build the LSTM model with the EXACT architecture from the spec.
+    Build the Bidirectional LSTM model for sign language classification.
 
     Architecture:
-        LSTM(64, tanh) -> BatchNorm -> Dropout(0.2)
-        LSTM(128, tanh) -> BatchNorm -> Dropout(0.2)
-        LSTM(64, tanh) -> BatchNorm -> Dropout(0.2)
-        Dense(64, relu)
-        Dense(32, relu)
+        Bidirectional(LSTM(64)) -> BatchNorm -> Dropout(0.5)
+        Dense(32, relu) -> Dropout(0.4)
         Dense(10, softmax)
     """
     from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
+    from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization, Bidirectional
 
     model = Sequential([
-        LSTM(64, return_sequences=True, activation="tanh",
-             input_shape=(SEQUENCE_LENGTH, NUM_FEATURES)),
+        Bidirectional(LSTM(64), input_shape=(SEQUENCE_LENGTH, NUM_FEATURES)),
         BatchNormalization(),
-        Dropout(0.2),
+        Dropout(0.5),
 
-        LSTM(128, return_sequences=True, activation="tanh"),
-        BatchNormalization(),
-        Dropout(0.2),
-
-        LSTM(64, return_sequences=False, activation="tanh"),
-        BatchNormalization(),
-        Dropout(0.2),
-
-        Dense(64, activation="relu"),
         Dense(32, activation="relu"),
+        Dropout(0.4),
         Dense(len(ACTIONS), activation="softmax"),
     ])
 
@@ -333,19 +334,27 @@ def main():
     X, y, skipped = load_data(args.data_path)
 
     # -----------------------------------------------------------------------
-    # Step 2: Train/Test Split
+    # Step 2: Train/Val/Test Split (BEFORE augmentation to prevent leakage)
     # -----------------------------------------------------------------------
     logger.info("Step 2/5: Splitting data...")
 
     # Need integer labels for stratification
     y_integers = np.argmax(y, axis=1)
 
-    X_train, X_test, y_train, y_test = train_test_split(
+    # First split: separate test set
+    X_trainval, X_test, y_trainval, y_test = train_test_split(
         X, y, test_size=args.test_size, random_state=42, stratify=y_integers
     )
 
-    logger.info("Training samples: %d", len(X_train))
-    logger.info("Test samples:     %d", len(X_test))
+    # Second split: separate validation set from training data
+    y_tv_integers = np.argmax(y_trainval, axis=1)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_trainval, y_trainval, test_size=0.15, random_state=42, stratify=y_tv_integers
+    )
+
+    logger.info("Training samples:   %d", len(X_train))
+    logger.info("Validation samples: %d", len(X_val))
+    logger.info("Test samples:       %d", len(X_test))
 
     # -----------------------------------------------------------------------
     # Step 2b: Data Augmentation (training set only)
@@ -401,7 +410,7 @@ def main():
         y_train,
         epochs=args.epochs,
         batch_size=args.batch_size,
-        validation_split=0.15,
+        validation_data=(X_val, y_val),
         callbacks=[early_stop, checkpoint, tb_callback],
         verbose=1,
     )

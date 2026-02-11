@@ -27,7 +27,8 @@ type SignPrediction = {
 type WsPayload =
   | SignPrediction
   | { type: "buffering"; frames_collected: number; frames_needed: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "sentence_complete"; sentence: string; word_count?: number };
 
 type BackendQuickReply = { label: string; spoken_text: string };
 type ConversationLine = { text: string; tone?: string; utteranceId?: string };
@@ -104,6 +105,9 @@ export function LiveWorkspace({
   const [errors, setErrors] = useState<string[]>([]);
   const [customReply, setCustomReply] = useState("");
   const [quickRepliesUsed, setQuickRepliesUsed] = useState(0);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState("Voice commands live");
+  const [sentenceInProgress, setSentenceInProgress] = useState("");
 
   const useBraille = profileId === "blind" || profileId === "deafblind";
   const speakIncoming = profileId === "blind";
@@ -242,10 +246,20 @@ export function LiveWorkspace({
         return;
       }
 
+      if (payload.type === "sentence_complete") {
+        setTranscript((prev) => [...prev, `[${payload.sentence}]`]);
+        setSentenceInProgress("");
+        if (useBraille) {
+          setBrailleCells((prev) => [...prev, ...textToBrailleCells(`${payload.sentence} `)]);
+        }
+        return;
+      }
+
       setBuffering("");
       const cleanSign = payload.sign.replace(/_/g, " ");
       setLatestSign(cleanSign);
       setConfidence(payload.confidence);
+      setSentenceInProgress(payload.sentence_in_progress ?? "");
       setHasReceivedSign(true);
       if (payload.is_new_sign && !(payload as SignPrediction & { _mock?: boolean })._mock) {
         setTranscript((prev) => [...prev, cleanSign]);
@@ -613,6 +627,7 @@ export function LiveWorkspace({
                   : "Turn camera on"}
             </p>
           </div>
+          {sentenceInProgress && <p className="mt-1 text-lg text-slate-400">{sentenceInProgress}</p>}
         </section>
 
         {showCaptionFeed && (

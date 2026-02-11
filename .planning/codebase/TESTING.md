@@ -5,246 +5,244 @@
 ## Test Framework
 
 **Runner:**
-- pytest (Python) - 21 test files, 114+ test functions
-- Config: `ml/conftest.py` (root) + `ml/tests/conftest.py` (fixtures)
+- pytest - Python test framework for both ML and backend
+- Run command: `ml/venv/Scripts/python.exe -m pytest ml/tests/`
 
 **Assertion Library:**
 - pytest built-in `assert` statements
-- NumPy assertions for array comparisons (`np.all`, `np.any`)
+- No additional assertion libraries
 
 **Run Commands:**
 ```bash
-cd ml
-python -m pytest tests/ -x -q --tb=short    # Run all tests (stop on first failure)
-python -m pytest tests/ -v                    # Verbose output
-python -m pytest tests/test_smoke.py          # Single file
-python -m pytest tests/ -k "keypoints"        # Match keyword
+ml/venv/Scripts/python.exe -m pytest ml/tests/           # Run all ML tests
+ml/venv/Scripts/python.exe -m pytest ml/tests/ -v         # Verbose output
+ml/venv/Scripts/python.exe -m pytest ml/tests/test_smoke.py  # Single file
+ml/venv/Scripts/python.exe -m pytest ml/tests/ -k "test_name" # By name
 ```
 
 ## Test File Organization
 
 **Location:**
-- Automated tests: `ml/tests/test_*.py` (21 files)
-- Manual tests: `ml/test_*.py` (4 files - require webcam/server)
-- Configuration: `ml/conftest.py` (root) + `ml/tests/conftest.py` (fixtures)
+- ML tests: `ml/tests/test_*.py` (dedicated tests/ directory, 18+ files, 131+ tests)
+- Backend tests: `backend/test_*.py` (root-level, 7 files)
+- Root ML tests: `ml/test_setup.py`, `ml/test_ws_client.py`, `ml/test_ws_health.py`
 
 **Naming:**
-- `test_{module}.py` for module-specific tests (`test_extract_keypoints.py`)
-- `test_{feature}.py` for feature-specific tests (`test_stability_filter.py`)
-- `test_{module}_{aspect}.py` for focused aspects (`test_decode_frame_hardened.py`)
+- `test_*.py` for all test files
+- `test_` prefix for all test functions
+- Descriptive names: `test_actions_has_10_items`, `test_extract_keypoints_all_landmarks`
 
 **Structure:**
 ```
 ml/
-  conftest.py                         # Root: patches MediaPipe globally
+  conftest.py                    # Root config (patches mediapipe)
+  test_setup.py                  # Environment verification
+  test_ws_client.py              # WebSocket client tests
+  test_ws_health.py              # Health endpoint tests
   tests/
-    conftest.py                       # Fixtures: mock_results_all, mock_results_none, etc.
-    test_smoke.py                     # Basic infrastructure validation
-    test_constants.py                 # ACTIONS array validation
-    test_config.py                    # Environment variable config
-    test_extract_keypoints.py         # Keypoint extraction edge cases
-    test_decode_frame.py              # Frame decoding from base64
-    test_decode_frame_hardened.py     # Hardened decoding (size, URL)
-    test_stability_filter.py          # Stability filter state machine
-    test_load_data.py                 # Data loading and shape validation
-    test_utils_assertion.py           # Runtime shape assertion
-    test_utils_paths.py               # Path resolution
-    test_utils_types.py               # Type hints on public functions
-    test_collect_args.py              # collect_data.py CLI arguments
-    test_collect_sequences.py         # Directory creation logic
-    test_realtime_args.py             # test_realtime.py CLI arguments
-    test_verify_cli.py                # verify_data.py CLI arguments
-    test_train_exceptions.py          # Training exception handling
-    test_train_lr.py                  # Learning rate CLI argument
-    test_ws_server.py                 # WebSocket endpoint behavior
-    test_ws_lifespan.py               # FastAPI lifespan (model loading)
-    test_ws_rate_limit.py             # Per-client rate limiting
-    test_ws_timing.py                 # Inference timing metrics
+    conftest.py                  # Fixtures (MockLandmark, mock_results_*)
+    test_augment.py              # Augmentation pipeline
+    test_collect_*.py            # Data collection validation
+    test_decode_frame*.py        # Frame decoding
+    test_extract_keypoints.py    # MediaPipe extraction
+    test_load_data.py            # Dataset loading
+    test_train_*.py              # Training validation
+    test_ws_*.py                 # WebSocket server tests
+    test_utils_*.py              # Utility function tests
+    test_config.py               # Config/env override tests
+    test_smoke.py                # Basic infrastructure checks
+    test_verify_cli.py           # CLI verification
+
+backend/
+  test_apis.py                   # API endpoint tests
+  test_services.py               # Service layer tests
+  test_tone_detection.py         # Tone analysis tests
+  test_tts_quick.py              # TTS quick tests
+  test_config.py                 # Config tests
+  test_tone_aggregator.py        # Tone aggregator tests
+  test_braille_ueb.py            # Braille translation tests
 ```
 
 ## Test Structure
 
 **Suite Organization:**
 ```python
-import pytest
-import numpy as np
-from utils import extract_keypoints
+# Function-based tests (most common pattern)
+def test_actions_has_10_items():
+    """Verify ACTIONS list has exactly 10 sign language actions."""
+    assert len(ACTIONS) == 10
 
-class TestAllLandmarksPresent:
-    """(a) All landmarks present -> correct shape and non-zero values."""
+def test_extract_keypoints_returns_correct_shape(mock_results_all):
+    """Keypoints should be a flat array of 1662 floats."""
+    keypoints = extract_keypoints(mock_results_all)
+    assert keypoints.shape == (1662,)
 
-    def test_shape_is_1662(self, mock_results_all):
-        keypoints = extract_keypoints(mock_results_all)
-        assert keypoints.shape == (1662,)
-
-    def test_pose_section_nonzero(self, mock_results_all):
-        keypoints = extract_keypoints(mock_results_all)
-        pose = keypoints[0:132]
-        assert np.any(pose != 0), "Pose section should have non-zero values"
-
-class TestNoLandmarksDetected:
-    """(b) No landmarks detected -> shape (1662,) all zeros."""
-
-    def test_all_zeros(self, mock_results_none):
-        keypoints = extract_keypoints(mock_results_none)
-        assert np.all(keypoints == 0)
+# Parametrized tests
+@pytest.mark.parametrize("action", ACTIONS)
+def test_each_action_directory_exists(action):
+    """Each action should have a data directory."""
+    assert (MP_DATA / action).is_dir()
 ```
 
 **Patterns:**
-- Class-based grouping for related test cases (TestAllLandmarks, TestNoLandmarks, TestHandsOnly)
-- Descriptive class docstrings explain the scenario being tested
-- One assertion focus per test (but multiple expects OK)
-- Fixtures via function parameters (`mock_results_all`, `monkeypatch`, `tmp_path`)
+- Function-based tests (no class-based test suites)
+- Fixtures via `conftest.py` for shared setup
+- `@pytest.mark.parametrize` for data-driven tests
+- Docstrings on test functions describing intent
+- One assertion focus per test
 
 ## Mocking
 
 **Framework:**
-- `unittest.mock` (MagicMock, patch)
-- pytest `monkeypatch` fixture for environment variables
-- Module-level mocking in `conftest.py`
+- pytest fixtures in `conftest.py` files
+- `unittest.mock` for patching (`from unittest.mock import patch, MagicMock`)
 
-**Critical Mock: MediaPipe Patching (`ml/conftest.py`):**
+**Patterns:**
 ```python
-def _ensure_mediapipe_solutions():
-    """Patch mediapipe.solutions.holistic if it doesn't exist."""
-    try:
-        import mediapipe as mp
-        _ = mp.solutions.holistic
-    except AttributeError:
-        solutions = types.ModuleType("mediapipe.solutions")
-        holistic = types.ModuleType("mediapipe.solutions.holistic")
-        holistic.FACEMESH_CONTOURS = None
-        holistic.POSE_CONNECTIONS = None
-        holistic.HAND_CONNECTIONS = None
-        holistic.Holistic = mock.MagicMock
-        solutions.holistic = holistic
-        solutions.drawing_utils = mock.MagicMock()
-        mp.solutions = solutions
-
-_ensure_mediapipe_solutions()
-```
-
-**What to Mock:**
-- MediaPipe runtime (no GPU/webcam needed for tests)
-- Environment variables (via `monkeypatch.setenv`)
-- File system for data tests (via `tmp_path` fixture)
-- TensorFlow model loading (for server tests)
-
-**What NOT to Mock:**
-- `extract_keypoints()` logic (test the real function)
-- `StabilityFilter` state machine (test actual behavior)
-- NumPy operations (test real math)
-
-## Fixtures and Factories
-
-**Test Data (`ml/tests/conftest.py`):**
-```python
-class MockLandmark:
-    """Mimics a single MediaPipe landmark with x, y, z, visibility."""
-    def __init__(self, x=0.5, y=0.5, z=0.0, visibility=1.0):
-        self.x, self.y, self.z, self.visibility = x, y, z, visibility
-
-def _make_landmarks(count, seed=42):
-    """Create deterministic MockLandmark objects."""
-    rng = np.random.RandomState(seed)
-    return [MockLandmark(rng.uniform(), rng.uniform(), rng.uniform(-1,1), rng.uniform())
-            for _ in range(count)]
-
+# conftest.py fixture pattern
 @pytest.fixture
 def mock_results_all():
-    """ALL landmarks present (pose=33, face=468, lh=21, rh=21)."""
-    results = types.SimpleNamespace()
-    results.pose_landmarks = _landmarks_container(_make_landmarks(33, seed=1))
-    results.face_landmarks = _landmarks_container(_make_landmarks(468, seed=2))
-    results.left_hand_landmarks = _landmarks_container(_make_landmarks(21, seed=3))
-    results.right_hand_landmarks = _landmarks_container(_make_landmarks(21, seed=4))
+    """Complete MediaPipe results with all landmarks."""
+    results = MagicMock()
+    results.pose_landmarks.landmark = [MockLandmark() for _ in range(33)]
+    results.left_hand_landmarks.landmark = [MockLandmark() for _ in range(21)]
+    results.right_hand_landmarks.landmark = [MockLandmark() for _ in range(21)]
+    results.face_landmarks.landmark = [MockLandmark() for _ in range(468)]
     return results
 
 @pytest.fixture
 def mock_results_none():
-    """NO landmarks detected (all None)."""
+    """Empty MediaPipe results (no detection)."""
+    results = MagicMock()
+    results.pose_landmarks = None
+    results.left_hand_landmarks = None
+    results.right_hand_landmarks = None
+    results.face_landmarks = None
+    return results
 
+# MockLandmark helper class
+class MockLandmark:
+    """Fake MediaPipe landmark with x, y, z, visibility."""
+    def __init__(self, x=0.5, y=0.5, z=0.0, visibility=1.0):
+        self.x, self.y, self.z, self.visibility = x, y, z, visibility
+```
+
+**What to Mock:**
+- MediaPipe results (complex landmark objects)
+- TensorFlow model loading and inference
+- External API calls (Groq, Hume, ElevenLabs)
+- WebSocket connections
+- Environment variables
+
+**What NOT to Mock:**
+- Pure utility functions (extract_keypoints, augmentation math)
+- NumPy array operations
+- Constants and configuration values
+
+## Fixtures and Factories
+
+**Test Data:**
+```python
+# MockLandmark factory (ml/tests/conftest.py)
+class MockLandmark:
+    def __init__(self, x=0.5, y=0.5, z=0.0, visibility=1.0):
+        self.x, self.y, self.z, self.visibility = x, y, z, visibility
+
+# Fixture variants for different detection states
 @pytest.fixture
-def mock_results_hands_only():
-    """Only hands detected (no pose/face)."""
+def mock_results_all():      # All landmarks detected
+@pytest.fixture
+def mock_results_none():     # Nothing detected
+@pytest.fixture
+def mock_results_hands_only(): # Partial detection
 ```
 
 **Location:**
-- Shared fixtures: `ml/tests/conftest.py`
-- Test-local data: inline in test files
+- `ml/conftest.py` - Root config (patches mediapipe before imports)
+- `ml/tests/conftest.py` - Test fixtures (MockLandmark, mock_results_*)
+- Factory patterns inline in test files when simple
 
 ## Coverage
 
 **Requirements:**
 - No enforced coverage target
-- Focus on critical paths: keypoint extraction, stability filter, frame decoding, server endpoints
-- Ralph verification gate: `pytest tests/ -x -q --tb=short` must pass before committing
+- Focus on critical paths: keypoint extraction, model inference, WebSocket protocol, augmentation
+- ML module has comprehensive coverage (131+ tests)
+- Backend has limited coverage (7 test files, primarily integration)
 
-**Configuration:**
-- No explicit coverage tooling configured
-- Tests can be run with `--cov` flag if needed
+**View Coverage:**
+```bash
+ml/venv/Scripts/python.exe -m pytest ml/tests/ --cov=ml --cov-report=html
+```
 
 ## Test Types
 
-**Unit Tests (majority):**
-- Test single function/class in isolation
-- Mock external dependencies (MediaPipe, TensorFlow, filesystem)
-- Fast: each test <100ms
-- Examples: `test_extract_keypoints.py`, `test_stability_filter.py`, `test_config.py`
+**Unit Tests:**
+- Scope: Individual functions in isolation
+- Examples: `test_extract_keypoints.py`, `test_augment.py`, `test_utils_*.py`
+- Mocking: MediaPipe results via fixtures
+- Speed: Fast (<100ms per test)
 
 **Integration Tests:**
-- Test module interactions
-- Mock only external boundaries
-- Examples: `test_ws_server.py` (FastAPI + decoding + response format)
+- Scope: Component interactions (WebSocket server, service pipelines)
+- Examples: `test_ws_*.py` (WebSocket lifespan, timing, rate limiting)
+- Mocking: External APIs mocked, internal modules real
+- Setup: FastAPI TestClient for HTTP/WebSocket
 
-**Manual Tests (not in automated suite):**
-- `ml/test_realtime.py` - Live webcam inference (requires camera + model)
-- `ml/test_setup.py` - Environment verification
-- `ml/test_ws_client.py` - WebSocket client stress test (requires running server)
-- `ml/test_ws_health.py` - Health endpoint check (requires running server)
+**Smoke Tests:**
+- Scope: Infrastructure verification
+- Examples: `test_smoke.py` (ACTIONS count, keypoint shape, model file existence)
+- Purpose: Catch configuration/environment issues early
 
-**E2E Tests:** Not currently implemented
+**Configuration Tests:**
+- Scope: Environment variable handling
+- Examples: `test_config.py` (env var overrides, defaults)
+- Mocking: `os.environ` patching
+
+**Type Annotation Tests:**
+- Scope: Verify all public functions have type hints
+- Examples: `test_utils_types.py`
+- Purpose: Enforce type annotation discipline
 
 ## Common Patterns
 
+**Fixture-based Testing:**
+```python
+def test_keypoints_zero_when_no_landmarks(mock_results_none):
+    """Missing landmarks should produce zero-filled arrays."""
+    keypoints = extract_keypoints(mock_results_none)
+    assert np.all(keypoints == 0)
+```
+
+**Parametrized Testing:**
+```python
+@pytest.mark.parametrize("action", ACTIONS)
+def test_action_sequences_exist(action):
+    """Each action should have at least one sequence directory."""
+    action_dir = MP_DATA / action
+    sequences = list(action_dir.iterdir())
+    assert len(sequences) > 0
+```
+
 **Environment Variable Testing:**
 ```python
-def test_host_env_override(self, monkeypatch):
-    monkeypatch.setenv("SENSEAI_HOST", "127.0.0.1")
-    import importlib
-    import utils
-    importlib.reload(utils)
-    assert utils.HOST == "127.0.0.1"
+def test_config_env_override():
+    """Environment variables should override defaults."""
+    with patch.dict(os.environ, {"HOST": "0.0.0.0", "PORT": "9999"}):
+        # reload config and verify
 ```
 
-**Error Testing:**
+**WebSocket Testing:**
 ```python
-def test_invalid_action_exits_with_error(self):
-    from collect_data import parse_args
-    with pytest.raises(SystemExit):
-        parse_args(["--actions", "InvalidSign"])
+async def test_ws_connection():
+    """WebSocket should accept connections and respond."""
+    async with httpx.AsyncClient(app=app) as client:
+        async with client.websocket_connect("/ws/sign-detection") as ws:
+            # send frame, assert response
 ```
 
-**NumPy Array Testing:**
-```python
-def test_pose_section_zeros(self, mock_results_hands_only):
-    keypoints = extract_keypoints(mock_results_hands_only)
-    pose = keypoints[0:132]
-    assert np.all(pose == 0), "Pose section should be all zeros"
-```
-
-**State Machine Testing:**
-```python
-def test_becomes_stable_after_n_identical(self):
-    sf = StabilityFilter(window_size=5, threshold=0.7)
-    for _ in range(4):
-        result = sf.update("Hello", 0.9)
-        assert not result["is_stable"]
-    result = sf.update("Hello", 0.9)
-    assert result["is_stable"]
-```
-
-**Snapshot Testing:** Not used (prefer explicit assertions)
+**Snapshot Testing:**
+- Not used in this codebase
 
 ---
 

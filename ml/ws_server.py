@@ -42,6 +42,7 @@ from utils import (
     StabilityFilter,
     mediapipe_detection,
     extract_keypoints,
+    prepare_keypoints,
 )
 
 # --- Logging ---
@@ -197,8 +198,9 @@ async def sign_detection(websocket: WebSocket):
             hands_detected = (results.left_hand_landmarks is not None
                               or results.right_hand_landmarks is not None)
 
-            # Extract keypoints
+            # Extract keypoints, strip face, normalize
             keypoints = extract_keypoints(results)
+            keypoints = prepare_keypoints(keypoints)
             keypoint_buffer.append(keypoints)
             frames_processed += 1
 

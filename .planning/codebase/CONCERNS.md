@@ -4,132 +4,168 @@
 
 ## Tech Debt
 
-**Tightly Coupled Dependency Versions:**
-- Issue: MediaPipe 0.10.21 -> numpy<2 -> TensorFlow 2.16.2 version chain
-- Files: `ml/requirements.txt`
-- Why: MediaPipe 0.10.22+ removed `mp.solutions.holistic` legacy API
-- Impact: Cannot upgrade any package in the chain independently; Python 3.13+ may break MediaPipe 0.10.21
-- Fix approach: Plan migration to MediaPipe Python SDK (new API) when ready, which removes the version chain constraint
+**Hardcoded Unix paths on Windows platform:**
+- Issue: `/tmp/` paths hardcoded for debug logging
+- Files: `backend/app/routers/conversation.py` (line 374), `backend/app/services/hume_tone.py` (line 52)
+- Why: Quick debug logging during development
+- Impact: File operations fail on Windows, breaking debug logging
+- Fix approach: Replace with `tempfile.gettempdir()` or `pathlib.Path`
 
-**Manual Test Files Mixed with Source:**
-- Issue: 4 manual test scripts (`test_realtime.py`, `test_setup.py`, `test_ws_client.py`, `test_ws_health.py`) live in `ml/` root instead of `ml/tests/`
-- Files: `ml/test_realtime.py`, `ml/test_setup.py`, `ml/test_ws_client.py`, `ml/test_ws_health.py`
-- Why: Created as standalone scripts before test infrastructure existed
-- Impact: Inconsistent test organization; pytest may pick them up unexpectedly
-- Fix approach: Move to `ml/tests/manual/` or rename to not match `test_*.py` pattern
+**Broad exception handling:**
+- Issue: Catch-all `except Exception` without specific exception types
+- Files: `backend/app/routers/conversation.py` (lines 83, 87, 233, 365, 387, 518, 522), `backend/app/services/hume_tone.py` (lines 172, 180), `ml/ws_server.py` (lines 68, 185, 270)
+- Why: Rapid development, defensive coding
+- Impact: Masks unexpected errors, makes debugging difficult
+- Fix approach: Catch specific exceptions per operation, re-raise unexpected ones
 
-**Vendored Code Without Version Tracking:**
-- Issue: `vendor/ralph-loop/` has no record of which commit/version was vendored
-- Files: `vendor/ralph-loop/`
-- Why: Copied manually without version pinning
-- Impact: Can't determine if upstream fixes are available
-- Fix approach: Add `vendor/VENDORED.md` documenting source, version, and date
+**In-memory profile storage:**
+- Issue: Profiles stored in dict, lost on restart (`_profiles = {}`)
+- File: `backend/app/routers/profile.py` (line 13)
+- Why: MVP simplicity
+- Impact: All user accessibility settings lost on server restart
+- Fix approach: Add persistent storage (SQLite, JSON file, or database)
+
+**Inconsistent logging (print vs logging):**
+- Issue: Backend uses `print()`, ML uses proper `logging` module
+- Files: `backend/app/routers/conversation.py` (many lines), vs `ml/ws_server.py` (uses `logger`)
+- Why: Different development phases/authors
+- Impact: Can't control log levels in production, no structured logging in backend
+- Fix approach: Migrate backend `print()` to Python `logging` module
+
+**Large monolithic files:**
+- Issue: Single files with complex intertwined logic
+- Files: `backend/app/routers/conversation.py` (527 lines), `senseai-frontend/src/components/LiveWorkspace.tsx` (612 lines)
+- Why: Organic growth during feature development
+- Impact: Hard to test individual functions, high cognitive load, increased bug risk
+- Fix approach: Extract WebSocket message handlers, room management, and TTS streaming into separate modules
 
 ## Known Bugs
 
-No confirmed bugs found in current codebase. Previous bugs (race condition, missing error handling, constant duplication) have been resolved per `docs/TODO.md` task completion history.
+**No confirmed bugs found during static analysis.**
+
+Codebase appears functionally stable (all 131+ ML tests pass, v1.1 shipped).
 
 ## Security Considerations
 
-**CORS Configuration (Resolved):**
-- ~~Risk: Any website can connect to the WebSocket server~~ — Now configurable via `SENSEAI_CORS_ORIGINS` env var
-- Files: `ml/utils.py` (CORS_ORIGINS), `ml/ws_server.py` (line 77)
-- Default: `["*"]` (development); set `SENSEAI_CORS_ORIGINS=https://your-frontend.com` for production
+**CORS wildcard default:**
+- Risk: Without `FRONTEND_ORIGIN` env var, accepts requests from any origin (`["*"]`)
+- File: `backend/app/main.py` (lines 32-41)
+- Current mitigation: Configurable via environment variable
+- Recommendations: Document that production must set `FRONTEND_ORIGIN`; fail-safe to restrictive default
 
-**Environment Variable Conversions (Resolved):**
-- ~~Risk: Invalid env var values crash server~~ — Now uses `_safe_int()`/`_safe_float()` with fallback defaults
-- Files: `ml/utils.py` (lines 39-81)
+**Missing input validation on profiles:**
+- Risk: No constraints on `profile_type` (accepts any string) or `user_name` (unbounded length)
+- Files: `backend/app/models/schemas.py` (lines 7-9), `backend/app/routers/profile.py` (line 45)
+- Current mitigation: Silent fallback to "deaf" profile type
+- Recommendations: Add `Field(pattern="^(deaf|blind|deafblind|mute)$")` and `max_length` constraints
 
-**Docker Image Uses node:20-slim for Python App:**
-- Risk: Unnecessary attack surface from Node.js in a primarily Python ML application
-- Files: `Dockerfile` (line 1)
-- Current mitigation: Non-root user (`ralph`) for container execution
-- Recommendations: Use `python:3.12-slim` as base image if Node.js not needed for Ralph CLI
+**No rate limiting on API calls:**
+- Risk: Unlimited calls to expensive external APIs (Groq, Hume, ElevenLabs) per WebSocket connection
+- Files: `backend/app/services/claude_intelligence.py`, `backend/app/services/hume_tone.py`, `backend/app/services/elevenlabs_tts.py`
+- Current mitigation: None
+- Recommendations: Add per-connection rate limiting and per-endpoint quotas
+
+**Missing WebSocket message validation:**
+- Risk: JSON messages not validated against schema, defaults to empty strings
+- Files: `backend/app/routers/conversation.py` (lines 179-188), `ml/ws_server.py` (lines 162-170)
+- Current mitigation: Silent fallback for unknown message types
+- Recommendations: Use Pydantic models for WebSocket message validation
+
+**No text length limits on braille endpoint:**
+- Risk: Arbitrarily large text accepted, potential memory exhaustion
+- File: `backend/app/routers/braille.py` (lines 14-39)
+- Current mitigation: None
+- Recommendations: Add `max_length` constraint to `text` query parameter
 
 ## Performance Bottlenecks
 
-**Per-Connection MediaPipe Initialization:**
-- Problem: Each WebSocket connection creates its own MediaPipe Holistic instance (~100-500MB)
-- Files: `ml/ws_server.py` (line 137)
-- Measurement: Not profiled, but MediaPipe instances are heavyweight
-- Cause: Per-client state isolation pattern
-- Improvement path: Consider connection pooling or shared detection service for high concurrency
+**Conversation history truncation:**
+- Problem: History truncated at 2000 chars, dropping to 1500 without warning
+- File: `backend/app/routers/conversation.py` (lines 215-216, 338-339, 490-492)
+- Cause: No pagination or summarization of older context
+- Improvement path: Summarize older history before truncating; log when truncation occurs
 
-**Global Model Without Concurrency Control:**
-- Problem: Single TensorFlow model shared across concurrent WebSocket connections
-- Files: `ml/ws_server.py` (lines 49, 203)
-- Measurement: Inference tracked in `deque(maxlen=100)`, warning at >200ms
-- Cause: `model.predict()` called directly from async handler without queue
-- Improvement path: Request queue or batching for many concurrent clients
-
-**No Frame Batching:**
-- Problem: Each frame triggers immediate inference (no amortization)
-- Files: `ml/ws_server.py` (lines 200-210)
-- Cause: Single-frame-at-a-time processing
-- Improvement path: Batch predictions across clients for GPU efficiency (if GPU added)
+**No performance bottlenecks measured** - real-time WebSocket latency appears acceptable for current scale.
 
 ## Fragile Areas
 
-**MediaPipe Version Constraint:**
-- Why fragile: Pinned to 0.10.21 (last version with legacy API); any accidental upgrade breaks everything
-- Common failures: `AttributeError: module 'mediapipe.solutions' has no attribute 'holistic'`
-- Safe modification: Always test with `ml/conftest.py` mock; never upgrade MediaPipe without migration plan
-- Test coverage: Good - conftest patches handle version differences; `test_extract_keypoints.py` validates contract
+**Tone mapping emotion labels:**
+- Why fragile: Hardcoded Hume emotion names in switching logic
+- File: `backend/app/services/hume_tone.py` (lines 114-126)
+- Common failures: If Hume API changes emotion labels, code breaks silently
+- Safe modification: Extract emotion classification to configurable mapping
+- Test coverage: No unit tests for tone mapping logic
 
-**Keypoint Vector Order and Size:**
-- Why fragile: LSTM model trained on exact 1662-dim vector in [pose, face, lh, rh] order
-- Common failures: Changing landmark count or order produces garbage predictions
-- Safe modification: Never change `extract_keypoints()` without retraining model
-- Test coverage: Good - runtime assertion + dedicated tests in `test_extract_keypoints.py`
+**Temp file cleanup in Hume service:**
+- Why fragile: `temp_path` may not be assigned before `finally` block runs
+- File: `backend/app/services/hume_tone.py` (lines 69-163)
+- Common failures: `NameError` if exception before temp file creation
+- Safe modification: Initialize `temp_path = None` before try block
+- Test coverage: No tests for error paths
 
-## Scaling Limits
-
-**WebSocket Server (Local):**
-- Current capacity: Designed for demo/development (single server, no load balancer)
-- Limit: Memory-bound by per-connection MediaPipe instances
-- Symptoms at limit: High memory usage, slow inference (>200ms threshold)
-- Scaling path: Add connection limits, pooled resources, or scale horizontally behind load balancer
+**WebSocket cleanup on disconnect:**
+- Why fragile: Cleanup assumes `prosody_buffer` was initialized; no timeout on `stop()`
+- File: `backend/app/routers/conversation.py` (lines 524-527), `ml/ws_server.py` (lines 272-274)
+- Common failures: Crash if exception during WebSocket startup phase
+- Safe modification: Add guard clauses; ensure stop operations have timeouts
 
 ## Dependencies at Risk
 
-**mediapipe 0.10.21:**
-- Risk: Legacy API removed in 0.10.22+; version may become incompatible with future Python versions
-- Impact: Core landmark detection breaks entirely
-- Migration plan: Move to MediaPipe Python SDK (new API) when project stabilizes; will require rewriting detection code in `ml/utils.py`
+**websockets version mismatch:**
+- Risk: `websockets==16.0` (ML) vs `websockets==13.1` (Backend) - major version difference
+- Impact: Different WebSocket behavior between services
+- Migration plan: Align on same major version when next updating
+
+**FastAPI minor version mismatch:**
+- Risk: `fastapi==0.128.6` (ML) vs `fastapi==0.128.5` (Backend)
+- Impact: Low risk (patch version), but should align
+- Migration plan: Pin both to same version
+
+**OpenAI SDK unbounded:**
+- Risk: `openai>=1.0.0` has no upper bound
+- File: `backend/requirements.txt`
+- Impact: Major version bump could break API calls
+- Migration plan: Add upper bound (`openai>=1.0.0,<3.0.0`)
+
+**MediaPipe 0.10.21 pinned (intentional):**
+- Risk: Frozen at last version with `mp.solutions.holistic`
+- Impact: No security/bug fixes from upstream
+- Migration plan: None needed unless holistic alternative found in newer MediaPipe
 
 ## Missing Critical Features
 
-**No .env.example File:**
-- Problem: New developers don't know which environment variables are needed
-- Files: Repository root (`.env` exists but is gitignored)
-- Current workaround: Must read `docker-compose.yml` and `ml/utils.py` to discover required variables
-- Implementation complexity: Low (create single file)
+**No persistent storage:**
+- Problem: All state (profiles, conversations) lives in memory
+- Current workaround: Users re-create profile each session
+- Blocks: Multi-session history, user preferences persistence
+- Implementation complexity: Low (add SQLite or JSON file storage)
 
-**No Production Deployment Configuration:**
-- Problem: No example configs for production deployment (Kubernetes, systemd, etc.)
-- Current workaround: Run locally with Uvicorn or Docker Compose
-- Blocks: Production deployment requires creating config from scratch
-- Implementation complexity: Medium (need to define deployment target first)
+**No authentication system:**
+- Problem: No user identity, anyone can access any endpoint
+- Current workaround: Single-user/demo mode assumed
+- Blocks: Multi-user deployment, personalized experiences
+- Implementation complexity: Medium (add JWT or session-based auth)
 
 ## Test Coverage Gaps
 
-**No Concurrent Client Tests:**
-- What's not tested: Multiple simultaneous WebSocket connections
-- Risk: Concurrency bugs with shared model or per-connection state
-- Priority: Medium
-- Difficulty to test: Need asyncio test harness simulating 10+ clients
+**Backend services untested:**
+- What's not tested: `backend/app/services/*.py` (10 service modules), `backend/app/routers/conversation.py` (527-line WebSocket handler)
+- Risk: Breaking changes to conversation logic, tone analysis, TTS streaming undetected
+- Priority: High
+- Difficulty to test: Need to mock external APIs (Groq, Hume, ElevenLabs)
 
-**No End-to-End Pipeline Test:**
-- What's not tested: Full data collection -> training -> inference pipeline
-- Risk: Breaking changes between pipeline stages undetected
+**Frontend completely untested:**
+- What's not tested: All React components, hooks, and utilities in `senseai-frontend/`
+- Risk: UI regressions, WebSocket reconnection failures, accessibility feature breakage
 - Priority: Medium
-- Difficulty to test: Requires minimal test dataset and automated training
+- Difficulty to test: Need React Testing Library or Playwright setup
 
-**No Data Quality Regression Tests:**
-- What's not tested: Hand detection quality after code changes
-- Risk: Subtle detection degradation goes unnoticed
+**Missing .env.example for ML module:**
+- What's missing: ML environment variables documented only in code
+- File: `ml/utils.py` (lines 78-91) defines HOST, PORT, CORS_ORIGINS, API_KEY
+- Backend has: `backend/.env.example`
 - Priority: Low
-- Difficulty to test: Need reference dataset with known detection rates
+- Fix: Create `ml/.env.example`
 
 ---
 

@@ -5,99 +5,91 @@
 ## Languages
 
 **Primary:**
-- Python 3.12 - All ML pipeline code (`ml/`)
-- TypeScript ~5.9.3 - Frontend flowchart visualization (`vendor/ralph-loop/flowchart/`)
+- Python 3.12 - Backend API, ML pipeline, all server-side logic
+- TypeScript 5.9.3 - Frontend React application (`senseai-frontend/tsconfig.json`)
 
 **Secondary:**
-- Bash/Shell - Automation & orchestration (`scripts/ralph/`, `Makefile`)
-- JavaScript/JSX (ES2022) - React components
+- JavaScript (ES6+) - Video call POC, build scripts (`video-call-poc/package.json`)
 
 ## Runtime
 
 **Environment:**
-- Python 3.12 (NOT compatible with 3.13 due to MediaPipe constraint)
-- Node.js 20+ (via `node:20-slim` Docker image)
-- Docker for containerized Ralph loop execution
-- Uvicorn 0.40.0 ASGI server for FastAPI
+- Python 3.12 venv at `ml/venv/` (never use system Python 3.13)
+- Node.js 20 - Docker base image (`Dockerfile` line 1: `FROM node:20-slim`)
+- MediaPipe 0.10.21 - Last version with `mp.solutions.holistic` (0.10.30+ removed it)
 
 **Package Manager:**
-- pip - Python packages (`ml/requirements.txt`, all versions pinned)
-- npm - Node.js packages (`vendor/ralph-loop/flowchart/package-lock.json`)
+- pip - Python packages (`backend/requirements.txt`, `ml/requirements.txt`)
+- npm - Node.js packages (`senseai-frontend/package.json`, `video-call-poc/package.json`)
+- Lockfile: `senseai-frontend/package-lock.json` present
 
 ## Frameworks
 
 **Core:**
-- FastAPI 0.128.6 - REST API & WebSocket server (`ml/ws_server.py`)
-- React 19.2.0 - UI framework for flowchart visualization (`vendor/ralph-loop/flowchart/`)
-- TensorFlow 2.16.2 - Deep learning / LSTM inference (`ml/train_model.py`, `ml/ws_server.py`)
-- MediaPipe 0.10.21 - Computer vision pose/hand/face detection (`ml/utils.py`)
+- FastAPI 0.128.5 - Backend REST/WebSocket API (`backend/requirements.txt`, `backend/app/main.py`)
+- FastAPI 0.128.6 - ML WebSocket server (`ml/requirements.txt`, `ml/ws_server.py`)
+- Next.js 16.1.6 - React meta-framework (`senseai-frontend/package.json`)
+- React 19.2.3 - UI library (`senseai-frontend/package.json`)
 
 **Testing:**
-- pytest - Python test suite (`ml/tests/`)
+- pytest - Python test framework (131+ tests in `ml/tests/`)
+- ESLint 9 - TypeScript linting (`senseai-frontend/eslint.config.mjs`)
 
 **Build/Dev:**
-- Vite 7.2.4 - Frontend bundler (`vendor/ralph-loop/flowchart/vite.config.ts`)
-- TypeScript ~5.9.3 - Type checking (`vendor/ralph-loop/flowchart/tsconfig.app.json`)
-- ESLint 9.39.1 - Linting (`vendor/ralph-loop/flowchart/eslint.config.js`)
-- Make - Build automation (`Makefile`)
+- Uvicorn 0.40.0 - ASGI server (`backend/requirements.txt`, `ml/requirements.txt`)
+- Tailwind CSS 4 - Utility-first styling (`senseai-frontend/package.json`)
+- PostCSS 4 - CSS processing (`senseai-frontend/package.json`)
 
 ## Key Dependencies
 
-**Critical (ML Pipeline):**
-- mediapipe 0.10.21 - Pose/face/hand landmark detection (PINNED: last version with `mp.solutions.holistic`) (`ml/requirements.txt`)
-- tensorflow 2.16.2 - LSTM model training & inference (PINNED: numpy<2 compatible) (`ml/requirements.txt`)
-- numpy 1.26.4 - Numerical computing (PINNED: constrained by MediaPipe) (`ml/requirements.txt`)
-- opencv-python 4.11.0.86 - Video capture & image I/O (`ml/requirements.txt`)
-- scikit-learn 1.6.1 - Train/test split, metrics (`ml/train_model.py`)
+**Critical (ML & Computer Vision):**
+- TensorFlow 2.16.2 - Deep learning, LSTM model (pinned for numpy<2 compat) - `ml/requirements.txt`
+- MediaPipe 0.10.21 - Hand/pose/face landmark detection - `ml/requirements.txt`
+- scikit-learn 1.6.1 - ML utilities - `ml/requirements.txt`
+- OpenCV 4.11.0.86 - Image processing - `ml/requirements.txt`
+- NumPy 1.26.4 - Numerical computing (constrained <2 by mediapipe) - `ml/requirements.txt`
 
-**Critical (Frontend):**
-- @xyflow/react 12.10.0 - Node/graph flowchart visualization (`vendor/ralph-loop/flowchart/package.json`)
+**Critical (AI Services):**
+- Groq SDK 1.0.0 - LLM inference + Whisper STT - `backend/requirements.txt`
+- Hume SDK 0.13.6 - Prosody/emotion analysis - `backend/requirements.txt`
+- ElevenLabs SDK - Text-to-speech - `backend/requirements.txt`
+- OpenAI SDK >=1.0.0 - Alternative Whisper STT - `backend/requirements.txt`
+- Anthropic SDK 0.79.0 - Claude API (configured, reserved) - `backend/requirements.txt`
 
 **Infrastructure:**
-- uvicorn 0.40.0 - ASGI server (`ml/requirements.txt`)
-- websockets 16.0 - WebSocket client for testing (`ml/requirements.txt`)
-- python-multipart 0.0.22 - Form data parsing (`ml/requirements.txt`)
-- matplotlib 3.10.8 - Training visualization (`ml/requirements.txt`)
+- Pydantic 2.12.5 - Data validation/serialization - `backend/requirements.txt`
+- websockets 16.0 (ML) / 13.1 (Backend) - WebSocket protocol - `ml/requirements.txt`, `backend/requirements.txt`
+- python-dotenv 1.2.1 - Environment variable loading - `backend/requirements.txt`
+
+**Frontend:**
+- lucide-react 0.563.0 - Icon library - `senseai-frontend/package.json`
+- clsx 2.1.1 - Conditional classnames - `senseai-frontend/package.json`
 
 ## Configuration
 
 **Environment:**
-- `.env` file (gitignored) for `ANTHROPIC_API_KEY`
-- Runtime config via environment variables with defaults in `ml/utils.py`:
-  - `SENSEAI_HOST` (default: "0.0.0.0")
-  - `SENSEAI_PORT` (default: 8001)
-  - `SENSEAI_CONFIDENCE_THRESHOLD` (default: 0.7)
-  - `SENSEAI_STABILITY_WINDOW` (default: 8)
+- `.env` files loaded via python-dotenv (`backend/app/config.py`)
+- Template: `backend/.env.example` (documents all required API keys)
+- Required keys: `GROQ_API_KEY`, `HUME_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
+- Optional keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `FRONTEND_ORIGIN`, `MOBILE_MODE`
+- Frontend constants: `senseai-frontend/src/lib/constants.ts` (API_URL, WS_URL)
 
 **Build:**
-- `vendor/ralph-loop/flowchart/vite.config.ts` - Vite config (base path: `/ralph/`)
-- `vendor/ralph-loop/flowchart/tsconfig.app.json` - TypeScript strict mode
-- `vendor/ralph-loop/flowchart/eslint.config.js` - ESLint with React/TS plugins
-- `Makefile` - Docker build targets (`ralph-once`, `ralph-afk`)
+- `senseai-frontend/tsconfig.json` - TypeScript strict mode
+- `senseai-frontend/next.config.ts` - Next.js configuration
+- `senseai-frontend/eslint.config.mjs` - ESLint 9 flat config
 
 ## Platform Requirements
 
 **Development:**
-- Windows/macOS/Linux with Python 3.12
-- Webcam required for data collection (`ml/collect_data.py`)
-- No GPU required (CPU inference)
+- Windows environment (primary development platform)
+- Python 3.12 venv required (system Python 3.13 incompatible with mediapipe)
+- Node.js 20+ for frontend
 
 **Production:**
-- Docker container (`Dockerfile` base: `node:20-slim`)
-- Non-root user `ralph` for container execution
-- Uvicorn for WebSocket server: `uvicorn ws_server:app --host 0.0.0.0 --port 8001`
-
-## Critical Version Constraints
-
-**Dependency chain (DO NOT CHANGE independently):**
-```
-MediaPipe 0.10.21 (last version with mp.solutions.holistic legacy API)
-  -> requires numpy<2
-    -> TensorFlow 2.16.2 (numpy<2 compatible)
-      -> NumPy 1.26.4
-```
-
-Breaking any link in this chain will cause import errors or runtime failures.
+- Docker container (`Dockerfile`, `docker-compose.yml`) for Ralph automation loop
+- Railway deployment (`backend/Procfile`, `backend/railway.toml`) for backend
+- Vercel-compatible Next.js frontend
 
 ---
 

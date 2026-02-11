@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AudioAssistButton } from "@/components/AudioAssistButton";
 import { BrailleCell } from "@/components/BrailleCell";
 import { VideoCall } from "@/components/VideoCall";
-import { textToBrailleCells, type BrailleCellPattern } from "@/braille/mapping";
+import { textToBrailleCells, brailleCellToCharacter, type BrailleCellPattern } from "@/braille/mapping";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
@@ -17,6 +17,9 @@ import { getToneDisplay } from "@/lib/toneDisplay";
 
 const AUDIO_CHUNK_INTERVAL_MS = 1500;
 const USE_BROWSER_WEB_SPEECH = false;
+const BRAILLE_DISPLAY_CELLS = 12;
+
+const EMPTY_BRAILLE_CELL: BrailleCellPattern = [false, false, false, false, false, false];
 
 type SignPrediction = {
   type: "sign_prediction";
@@ -117,7 +120,6 @@ export function LiveWorkspace({
   const [lastConvTone, setLastConvTone] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [brailleCells, setBrailleCells] = useState<BrailleCellPattern[]>([]);
   const [buffering, setBuffering] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [customReply, setCustomReply] = useState("");
@@ -434,9 +436,6 @@ export function LiveWorkspace({
       setHasReceivedSign(true);
       if (payload.is_new_sign && !(payload as SignPrediction & { _mock?: boolean })._mock) {
         setTranscript((prev) => [...prev, cleanSign]);
-        if (useBraille) {
-          setBrailleCells((prev) => [...prev, ...textToBrailleCells(`${cleanSign} `)]);
-        }
         if (speakIncoming) speakText(cleanSign, apiUrl);
       }
     },
@@ -909,14 +908,10 @@ export function LiveWorkspace({
     [conversationTranscript, transcript]
   );
 
-  useEffect(() => {
-    if (!useBraille) return;
-    if (!combinedTranscriptText.trim()) {
-      setBrailleCells([]);
-      return;
-    }
-    setBrailleCells(textToBrailleCells(combinedTranscriptText + " "));
-  }, [combinedTranscriptText, useBraille]);
+  const brailleDisplayCells = useMemo(() => {
+    if (!combinedTranscriptText.trim()) return [];
+    return textToBrailleCells(combinedTranscriptText + " ").slice(-BRAILLE_DISPLAY_CELLS);
+  }, [combinedTranscriptText]);
 
   const sendChatMessage = () => {
     const trimmed = chatInput.trim();
@@ -1124,16 +1119,24 @@ export function LiveWorkspace({
           {useBraille && (
             <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
               <h2 className="text-2xl font-semibold text-slate-100">Braille output</h2>
-              <div className="mt-4 max-h-64 min-h-[4rem] overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-4">
-                <div className="flex flex-wrap gap-2">
-                  {brailleCells.length === 0 ? (
-                    <p className="text-slate-500">No braille yet. Conversation and sign text will appear here.</p>
-                  ) : (
-                    brailleCells.map((cell, index) => (
-                      <BrailleCell key={index} pattern={cell} />
-                    ))
-                  )}
+              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
+                <div className="flex flex-nowrap items-center justify-center gap-2">
+                  {Array.from({ length: BRAILLE_DISPLAY_CELLS }, (_, i) => {
+                    const pattern = brailleDisplayCells[i] ?? EMPTY_BRAILLE_CELL;
+                    const char = brailleCellToCharacter(pattern);
+                    return (
+                      <div key={i} className="flex flex-col items-center gap-1">
+                        <BrailleCell pattern={pattern} />
+                        <span className="min-h-[1.25rem] text-center text-sm font-mono text-slate-400" aria-hidden="true">
+                          {char === " " ? "·" : char}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
+                {brailleDisplayCells.length === 0 && (
+                  <p className="mt-2 text-center text-sm text-slate-500">Conversation and sign text will appear here.</p>
+                )}
               </div>
             </section>
           )}

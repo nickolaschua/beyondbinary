@@ -60,6 +60,21 @@ export const BRAILLE_MAP: Record<string, BrailleCellPattern> = {
   "#": [_, _, DOT, DOT, DOT, DOT],
 };
 
+function patternKey(p: BrailleCellPattern): string {
+  return p.join(",");
+}
+
+const BRAILLE_TO_CHAR: Record<string, string> = {};
+for (const [char, pattern] of Object.entries(BRAILLE_MAP)) {
+  BRAILLE_TO_CHAR[patternKey(pattern)] = char;
+}
+
+/** Return the character (or space) that a braille cell represents, for display under the cell. */
+export function brailleCellToCharacter(pattern: BrailleCellPattern): string {
+  const key = patternKey(pattern);
+  return BRAILLE_TO_CHAR[key] ?? " ";
+}
+
 const DIGIT_TO_LETTER: Record<string, string> = {
   "1": "a",
   "2": "b",

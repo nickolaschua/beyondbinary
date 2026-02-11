@@ -61,7 +61,6 @@ const TONE_TO_DISPLAY: Record<string, { label: string; emoji: string }> = {
   "with distress": { label: "Distress", emoji: "😰" },
   quietly: { label: "Quiet", emoji: "🙂" },
   apologetically: { label: "Apologetic", emoji: "🙂" },
-  firmly: { label: "Firm", emoji: "🙂" },
 }
 
 export function getToneDisplay(toneLabel: string | null | undefined): { label: string; emoji: string } {

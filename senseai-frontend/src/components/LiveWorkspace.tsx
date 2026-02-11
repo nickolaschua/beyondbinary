@@ -5,8 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AudioAssistButton } from "@/components/AudioAssistButton";
 import { BrailleCell } from "@/components/BrailleCell";
-import { textToBrailleCells, type BrailleCellPattern } from "@/braille/mapping";
+import { VideoCall } from "@/components/VideoCall";
+import { brailleCellToCharacter, textToBrailleCells, type BrailleCellPattern } from "@/braille/mapping";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useWebRTC } from "@/hooks/useWebRTC";
 import { usePageAudioGuide } from "@/hooks/usePageAudioGuide";
 import { getProfile, type UserProfileId } from "@/lib/profile";
 import { writeSessionSummary } from "@/lib/session";
@@ -15,6 +17,46 @@ import { getToneDisplay } from "@/lib/toneDisplay";
 
 const AUDIO_CHUNK_INTERVAL_MS = 1500;
 const USE_BROWSER_WEB_SPEECH = false;
+const BRAILLE_DISPLAY_CELLS = 12;
+const EMPTY_BRAILLE_CELL: BrailleCellPattern = [false, false, false, false, false, false];
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function rewriteRuntimeUrl(rawUrl: string, kind: "http" | "ws"): string {
+  if (typeof window === "undefined") return rawUrl;
+  try {
+    const url = new URL(rawUrl);
+    const pageHost = window.location.hostname;
+    const pageIsLocal = LOCAL_HOSTS.has(pageHost);
+    const targetIsLocal = LOCAL_HOSTS.has(url.hostname);
+
+    // In non-local access, always target backend on the same host as the page.
+    // This prevents stale query params (old IPs/localhost) from breaking signaling.
+    if (!pageIsLocal && url.hostname !== pageHost) {
+      url.hostname = pageHost;
+    } else if (targetIsLocal && !pageIsLocal) {
+      url.hostname = pageHost;
+    }
+
+    if (!url.port) {
+      url.port = "8000";
+    }
+
+    if (window.location.protocol === "https:") {
+      if (kind === "http" && url.protocol === "http:") url.protocol = "https:";
+      if (kind === "ws" && url.protocol === "ws:") url.protocol = "wss:";
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return rawUrl;
+  }
+}
+
+function shouldInitiateOffer(localClientId: string | null, remoteClientId: string): boolean {
+  if (!localClientId) return false;
+  // Deterministic tie-breaker: only one side starts offer.
+  return localClientId > remoteClientId;
+}
 
 type SignPrediction = {
   type: "sign_prediction";
@@ -31,8 +73,18 @@ type WsPayload =
   | { type: "sentence_complete"; sentence: string; word_count?: number };
 
 type BackendQuickReply = { label: string; spoken_text: string };
-type ConversationLine = { text: string; tone?: string; utteranceId?: string };
+type ConversationLine = {
+  text: string;
+  tone?: string;
+  utteranceId?: string;
+  speakerClientId?: string;
+  sender?: "local" | "remote";
+};
 const QUICK_REPLY_MIN_REFRESH_MS = 4000;
+const TONE_CONFIRM_INTERVAL_MS = 2200;
+const TONE_CONFIRM_WINDOW_MS = 7000;
+const TONE_CONFIRM_MIN_CONFIDENCE = 0.35;
+type PendingToneSample = { tone: string; confidence: number; at: number; utteranceId?: string };
 
 const hasSpeechRecognition =
   typeof window !== "undefined" && !!(window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
@@ -65,15 +117,23 @@ export function LiveWorkspace({
     `${profile.label} live workspace. Turn camera on to stream sign detection; use quick replies for faster responses.`
   );
 
+  // When page is loaded over HTTPS, upgrade backend URLs to https/wss (mixed content rule)
+  const effectiveApiUrl = useMemo(() => {
+    return rewriteRuntimeUrl(apiUrl, "http");
+  }, [apiUrl]);
+  const effectiveWsUrl = useMemo(() => {
+    return rewriteRuntimeUrl(wsUrl, "ws");
+  }, [wsUrl]);
+
   const wsEndpoint = useMemo(() => {
-    const url = new URL(`${wsUrl.replace(/\/$/, "")}/ws/sign-detection`);
+    const url = new URL(`${effectiveWsUrl.replace(/\/$/, "")}/ws/sign-detection`);
     if (apiKey.trim()) url.searchParams.set("api_key", apiKey.trim());
     return url.toString();
-  }, [apiKey, wsUrl]);
+  }, [apiKey, effectiveWsUrl]);
 
   const conversationWsUrl = useMemo(
-    () => `${apiUrl.replace(/^http/, "ws").replace(/\/$/, "")}/ws/conversation`,
-    [apiUrl]
+    () => `${effectiveApiUrl.replace(/^http/, "ws").replace(/\/$/, "")}/ws/conversation`,
+    [effectiveApiUrl]
   );
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -81,11 +141,19 @@ export function LiveWorkspace({
   const frameTimerRef = useRef<number | null>(null);
   const startedAtRef = useRef<string>(new Date().toISOString());
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const localVideoStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunkIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const startSendingAudioRef = useRef<() => void>(() => {});
   const lastQuickReplyUpdateRef = useRef<number>(0);
+  const pendingWebRtcOfferRef = useRef<{ fromPeerId: string; offer: RTCSessionDescriptionInit } | null>(null);
+  const pendingWebRtcAnswerRef = useRef<RTCSessionDescriptionInit | null>(null);
+  const pendingWebRtcCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const shouldCreateOfferRef = useRef(false);
+  const hasCreatedOfferForPeerRef = useRef<string | null>(null);
+  const localClientIdRef = useRef<string | null>(null);
+  const toneSamplesRef = useRef<PendingToneSample[]>([]);
 
   const [cameraOn, setCameraOn] = useState(false);
   const NO_SIGN_YET = "—";
@@ -100,7 +168,6 @@ export function LiveWorkspace({
   const [lastConvTone, setLastConvTone] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [brailleCells, setBrailleCells] = useState<BrailleCellPattern[]>([]);
   const [buffering, setBuffering] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [customReply, setCustomReply] = useState("");
@@ -108,6 +175,10 @@ export function LiveWorkspace({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [voiceStatus, setVoiceStatus] = useState("Voice commands live");
   const [sentenceInProgress, setSentenceInProgress] = useState("");
+  const [remotePeerId, setRemotePeerId] = useState<string | null>(null);
+  const [localClientId, setLocalClientId] = useState<string | null>(null);
+  const [localStreamState, setLocalStreamState] = useState<MediaStream | null>(null);
+  const [webrtcTrigger, setWebrtcTrigger] = useState(0);
 
   const useBraille = profileId === "blind" || profileId === "deafblind";
   const speakIncoming = profileId === "blind";
@@ -124,11 +195,27 @@ export function LiveWorkspace({
         case "transcript":
           if (msg.text != null) {
             const utteranceId = msg.utterance_id != null ? String(msg.utterance_id) : undefined;
+            const speakerClientId = msg.speaker_client_id != null ? String(msg.speaker_client_id) : undefined;
+            const sender = msg.sender != null ? String(msg.sender) : "unknown";
+            const normalizedSender: "local" | "remote" = sender === "remote" ? "remote" : "local";
+            console.log("[ConvWS] transcript received", {
+              sender,
+              speakerClientId,
+              localClientId: localClientIdRef.current,
+              utteranceId,
+              text: String(msg.text),
+            });
             setConversationTranscript((prev) => {
               if (!utteranceId) {
                 return [
                   ...prev,
-                  { text: String(msg.text), tone: msg.tone != null ? String(msg.tone) : undefined, utteranceId },
+                  {
+                    text: String(msg.text),
+                    tone: msg.tone != null ? String(msg.tone) : undefined,
+                    utteranceId,
+                    speakerClientId,
+                    sender: normalizedSender,
+                  },
                 ];
               }
 
@@ -136,7 +223,13 @@ export function LiveWorkspace({
               if (idx === -1) {
                 return [
                   ...prev,
-                  { text: String(msg.text), tone: msg.tone != null ? String(msg.tone) : undefined, utteranceId },
+                  {
+                    text: String(msg.text),
+                    tone: msg.tone != null ? String(msg.tone) : undefined,
+                    utteranceId,
+                    speakerClientId,
+                    sender: normalizedSender,
+                  },
                 ];
               }
 
@@ -145,6 +238,8 @@ export function LiveWorkspace({
                 ...next[idx],
                 text: String(msg.text),
                 tone: msg.tone != null ? String(msg.tone) : next[idx].tone,
+                speakerClientId: speakerClientId ?? next[idx].speakerClientId,
+                sender: normalizedSender,
               };
               return next;
             });
@@ -152,39 +247,98 @@ export function LiveWorkspace({
           break;
         case "utterance_created":
           if (msg.text != null) {
-            const tone = msg.tone as { label?: string } | undefined;
+            const tone = msg.tone as { label?: string; confidence?: number | string } | undefined;
             const utteranceId = msg.utterance_id != null ? String(msg.utterance_id) : undefined;
+            const speakerClientId = msg.speaker_client_id != null ? String(msg.speaker_client_id) : undefined;
+            const sender = msg.sender != null ? String(msg.sender) : "unknown";
+            const normalizedSender: "local" | "remote" = sender === "remote" ? "remote" : "local";
+            console.log("[ConvWS] utterance_created received", {
+              sender,
+              speakerClientId,
+              localClientId: localClientIdRef.current,
+              utteranceId,
+              tone: tone?.label,
+              text: String(msg.text),
+            });
             setConversationTranscript((prev) => {
               if (!utteranceId) {
-                return [...prev, { text: String(msg.text), tone: tone?.label, utteranceId }];
+                return [...prev, { text: String(msg.text), tone: tone?.label, utteranceId, speakerClientId, sender: normalizedSender }];
               }
 
               const idx = prev.findIndex((line) => line.utteranceId === utteranceId);
               if (idx === -1) {
-                return [...prev, { text: String(msg.text), tone: tone?.label, utteranceId }];
+                return [...prev, { text: String(msg.text), tone: tone?.label, utteranceId, speakerClientId, sender: normalizedSender }];
               }
 
               const next = [...prev];
-              next[idx] = { ...next[idx], text: String(msg.text), tone: tone?.label ?? next[idx].tone };
+              next[idx] = {
+                ...next[idx],
+                text: String(msg.text),
+                tone: tone?.label ?? next[idx].tone,
+                speakerClientId: speakerClientId ?? next[idx].speakerClientId,
+                sender: normalizedSender,
+              };
               return next;
             });
-            if (tone?.label) setLastConvTone(tone.label);
+            if (tone?.label) {
+              if (profileId === "deaf") {
+                const toneConfidence = Number(tone.confidence ?? 0);
+                const confidence = Number.isFinite(toneConfidence) ? toneConfidence : 0;
+                toneSamplesRef.current.push({
+                  tone: tone.label,
+                  confidence,
+                  at: Date.now(),
+                  utteranceId,
+                });
+                console.log("[ToneConfirm] queued from utterance_created", {
+                  tone: tone.label,
+                  confidence,
+                  utteranceId,
+                });
+              } else {
+                setLastConvTone(tone.label);
+              }
+            }
           }
           break;
         case "tone_update": {
           const toneStr = msg.tone != null ? String(msg.tone) : null;
-          if (toneStr) setLastConvTone(toneStr);
           const utteranceId = msg.utterance_id != null ? String(msg.utterance_id) : undefined;
           if (utteranceId && toneStr) {
             setConversationTranscript((prev) =>
               prev.map((line) => (line.utteranceId === utteranceId ? { ...line, tone: toneStr } : line))
             );
           }
+          if (toneStr) {
+            if (profileId === "deaf") {
+              const toneConfidence = Number(msg.tone_confidence ?? 0);
+              const confidence = Number.isFinite(toneConfidence) ? toneConfidence : 0;
+              toneSamplesRef.current.push({
+                tone: toneStr,
+                confidence,
+                at: Date.now(),
+                utteranceId,
+              });
+              console.log("[ToneConfirm] queued from tone_update", {
+                tone: toneStr,
+                confidence,
+                utteranceId,
+              });
+            } else {
+              setLastConvTone(toneStr);
+            }
+          }
           break;
         }
         case "simplified":
           if (msg.text != null) setSimplifiedText(String(msg.text));
           if (Array.isArray(msg.quick_replies)) {
+            const sender = msg.sender != null ? String(msg.sender) : "local";
+            const shouldUseReplies = remotePeerId ? sender === "remote" : sender !== "remote";
+            if (!shouldUseReplies) {
+              console.log("[QuickReplies] ignored", { sender, remotePeerId });
+              break;
+            }
             const now = Date.now();
             const nextReplies = (msg.quick_replies as BackendQuickReply[])
               .map((r) => ({
@@ -199,13 +353,14 @@ export function LiveWorkspace({
               setBackendQuickReplies((prev) => {
                 if (prev.length > 0 && !shouldRefresh) return prev;
                 lastQuickReplyUpdateRef.current = now;
+                console.log("[QuickReplies] updated", { sender, count: nextReplies.length });
                 return nextReplies;
               });
             }
           }
           break;
         case "summary":
-          if (msg.text != null && profileId === "blind") speakText(String(msg.text), apiUrl);
+          if (msg.text != null && profileId === "blind") speakText(String(msg.text), effectiveApiUrl);
           break;
         case "chat_message":
           setChatMessages((prev) => [...prev, { sender: (msg.sender as "local" | "remote") ?? "remote", text: String(msg.text ?? ""), tts: Boolean(msg.tts) }]);
@@ -219,14 +374,91 @@ export function LiveWorkspace({
         case "status":
           setConvStatus(String(msg.message ?? ""));
           break;
+        case "connection_ready": {
+          const clientId = msg.client_id != null ? String(msg.client_id) : "";
+          if (clientId) {
+            localClientIdRef.current = clientId;
+            setLocalClientId(clientId);
+            console.log("[ConvWS] connection_ready", { clientId });
+            console.log("[WebRTC] Connection ready. Local client id:", clientId);
+            if (remotePeerId) {
+              shouldCreateOfferRef.current = shouldInitiateOffer(localClientIdRef.current, remotePeerId);
+            }
+            setWebrtcTrigger((prev) => prev + 1);
+          }
+          break;
+        }
         case "error":
           setErrors((prev) => [...prev.slice(-5), String(msg.message ?? "Unknown error")]);
           break;
+        case "peer_joined": {
+          const peerId = String(msg.peer_id ?? "");
+          console.log("[WebRTC] Peer joined:", peerId);
+          if (peerId) {
+            if (peerId === remotePeerId) {
+              console.log("[WebRTC] Duplicate peer_joined ignored for:", peerId);
+              break;
+            }
+            setRemotePeerId(peerId);
+            shouldCreateOfferRef.current = shouldInitiateOffer(localClientIdRef.current, peerId);
+            hasCreatedOfferForPeerRef.current = null;
+            setWebrtcTrigger((prev) => prev + 1);
+            // Offer will be created in useEffect
+          }
+          break;
+        }
+        case "webrtc_offer": {
+          const fromPeerId = String(msg.from_peer_id ?? "");
+          const offer = msg.offer as RTCSessionDescriptionInit;
+          console.log("[WebRTC] Received offer from:", fromPeerId);
+          if (fromPeerId && offer) {
+            // Callee side: do not initiate a competing offer.
+            shouldCreateOfferRef.current = false;
+            hasCreatedOfferForPeerRef.current = fromPeerId;
+            setRemotePeerId(fromPeerId);
+            // Store for async WebRTC handling
+            pendingWebRtcOfferRef.current = { fromPeerId, offer };
+            setWebrtcTrigger((prev) => prev + 1);
+          }
+          break;
+        }
+        case "webrtc_answer": {
+          const answer = msg.answer as RTCSessionDescriptionInit;
+          console.log("[WebRTC] Received answer");
+          if (answer) {
+            pendingWebRtcAnswerRef.current = answer;
+            setWebrtcTrigger((prev) => prev + 1);
+          }
+          break;
+        }
+        case "webrtc_ice_candidate": {
+          const candidate = msg.candidate as RTCIceCandidateInit;
+          console.log("[WebRTC] Received ICE candidate");
+          if (candidate) {
+            pendingWebRtcCandidatesRef.current.push(candidate);
+            setWebrtcTrigger((prev) => prev + 1);
+          }
+          break;
+        }
+        case "peer_left": {
+          const leftPeerId = String(msg.peer_id ?? "");
+          if (remotePeerId && leftPeerId && leftPeerId !== remotePeerId) {
+            console.log("[WebRTC] Ignoring peer_left for non-active peer:", leftPeerId);
+            break;
+          }
+          setRemotePeerId(null);
+          shouldCreateOfferRef.current = false;
+          hasCreatedOfferForPeerRef.current = null;
+          pendingWebRtcOfferRef.current = null;
+          pendingWebRtcAnswerRef.current = null;
+          pendingWebRtcCandidatesRef.current = [];
+          break;
+        }
         default:
           break;
       }
     },
-    [apiUrl, profileId]
+    [effectiveApiUrl, profileId, remotePeerId]
   );
 
   const { isConnected, connect, disconnect, sendJSON } = useWebSocket({
@@ -263,10 +495,7 @@ export function LiveWorkspace({
       setHasReceivedSign(true);
       if (payload.is_new_sign && !(payload as SignPrediction & { _mock?: boolean })._mock) {
         setTranscript((prev) => [...prev, cleanSign]);
-        if (useBraille) {
-          setBrailleCells((prev) => [...prev, ...textToBrailleCells(`${cleanSign} `)]);
-        }
-        if (speakIncoming) speakText(cleanSign, apiUrl);
+        if (speakIncoming) speakText(cleanSign, effectiveApiUrl);
       }
     },
   });
@@ -282,23 +511,193 @@ export function LiveWorkspace({
     onMessage: handleConvMessage,
   });
 
+  useEffect(() => {
+    if (profileId !== "deaf") {
+      toneSamplesRef.current = [];
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      toneSamplesRef.current = toneSamplesRef.current.filter((sample) => now - sample.at <= TONE_CONFIRM_WINDOW_MS);
+      if (toneSamplesRef.current.length === 0) return;
+
+      const best = toneSamplesRef.current.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+      if (best.confidence < TONE_CONFIRM_MIN_CONFIDENCE) {
+        console.log("[ToneConfirm] waiting for stronger tone sample", {
+          bestTone: best.tone,
+          bestConfidence: best.confidence,
+          sampleCount: toneSamplesRef.current.length,
+        });
+        return;
+      }
+
+      setLastConvTone((prev) => (prev === best.tone ? prev : best.tone));
+      console.log("[ToneConfirm] confirmed", {
+        tone: best.tone,
+        confidence: best.confidence,
+        sampleCount: toneSamplesRef.current.length,
+      });
+      toneSamplesRef.current = [];
+    }, TONE_CONFIRM_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [profileId]);
+
   // Ref so async callbacks (MediaRecorder, Web Speech) always use current WS
   const sendConvJSONRef = useRef(sendConvJSON);
   useEffect(() => {
     sendConvJSONRef.current = sendConvJSON;
   }, [sendConvJSON]);
 
-  const backendProfileType = profileId === "blind" ? "blind" : "deaf";
+  // WebRTC hook - initialized after WebSocket hooks
+  const {
+    remoteStream,
+    connectionState,
+    createOffer,
+    handleOffer,
+    handleAnswer,
+    handleIceCandidate,
+    closePeerConnection,
+  } = useWebRTC({
+    localStream: localStreamState,
+    onIceCandidate: (candidate) => {
+      if (remotePeerId && sendConvJSON) {
+        sendConvJSON({
+          type: "webrtc_ice_candidate",
+          target_peer_id: remotePeerId,
+          candidate: candidate.toJSON(),
+        });
+      }
+    },
+  });
+
+  // Store WebRTC handlers in refs
+  const handleOfferRef = useRef(handleOffer);
+  const handleAnswerRef = useRef(handleAnswer);
+  const handleIceCandidateRef = useRef(handleIceCandidate);
+
+  useEffect(() => {
+    handleOfferRef.current = handleOffer;
+  }, [handleOffer]);
+
+  useEffect(() => {
+    handleAnswerRef.current = handleAnswer;
+  }, [handleAnswer]);
+
+  useEffect(() => {
+    handleIceCandidateRef.current = handleIceCandidate;
+  }, [handleIceCandidate]);
+
+  // Process pending WebRTC messages
+  useEffect(() => {
+    if (pendingWebRtcOfferRef.current) {
+      const { fromPeerId, offer } = pendingWebRtcOfferRef.current;
+      pendingWebRtcOfferRef.current = null;
+      handleOfferRef.current(offer)
+        .then((answer) => {
+          const sendJSON = sendConvJSONRef.current;
+          if (sendJSON) {
+            sendJSON({
+              type: "webrtc_answer",
+              target_peer_id: fromPeerId,
+              answer: answer,
+            });
+          }
+        })
+        .catch((err) => {
+          console.error("[WebRTC] Failed to handle offer:", err);
+          setErrors((prev) => [...prev.slice(-5), "Failed to handle WebRTC offer"]);
+        });
+    }
+
+    if (pendingWebRtcAnswerRef.current) {
+      const answer = pendingWebRtcAnswerRef.current;
+      pendingWebRtcAnswerRef.current = null;
+      handleAnswerRef.current(answer).catch((err) => {
+        console.error("[WebRTC] Failed to handle answer:", err);
+        setErrors((prev) => [...prev.slice(-5), "Failed to handle WebRTC answer"]);
+      });
+    }
+
+    if (pendingWebRtcCandidatesRef.current.length > 0) {
+      const candidates = [...pendingWebRtcCandidatesRef.current];
+      pendingWebRtcCandidatesRef.current = [];
+      candidates.forEach((candidate) => {
+        handleIceCandidateRef.current(candidate).catch((err) => {
+          console.error("[WebRTC] Failed to add ICE candidate:", err);
+        });
+      });
+    }
+  }, [webrtcTrigger]);
+
+  useEffect(() => {
+    if (!remotePeerId || !localStreamState) {
+      console.log("[WebRTC] Not creating offer - remotePeerId:", remotePeerId, "localStream:", !!localStreamState);
+      return;
+    }
+
+    if (!shouldCreateOfferRef.current) {
+      console.log("[WebRTC] Skipping offer creation (not initiator)");
+      return;
+    }
+
+    if (hasCreatedOfferForPeerRef.current === remotePeerId) {
+      console.log("[WebRTC] Offer already created for peer:", remotePeerId);
+      return;
+    }
+
+    console.log("[WebRTC] Creating offer for peer:", remotePeerId, "with stream:", !!localStreamState);
+    const sendJSON = sendConvJSONRef.current;
+    if (!sendJSON) return;
+
+    hasCreatedOfferForPeerRef.current = remotePeerId;
+    shouldCreateOfferRef.current = false;
+
+    createOffer()
+      .then((offer) => {
+        console.log("[WebRTC] Sending offer to peer:", remotePeerId);
+        sendJSON({
+          type: "webrtc_offer",
+          target_peer_id: remotePeerId,
+          offer: offer,
+        });
+      })
+      .catch((err) => {
+        console.error("[WebRTC] Failed to create/send offer:", err);
+        hasCreatedOfferForPeerRef.current = null;
+        setErrors((prev) => [...prev.slice(-5), "Failed to create WebRTC offer"]);
+      });
+  }, [remotePeerId, localStreamState, createOffer, webrtcTrigger]);
+
+  // Handle peer_left event
+  useEffect(() => {
+    if (!remotePeerId) {
+      closePeerConnection();
+    }
+  }, [remotePeerId, closePeerConnection]);
+
+  const backendProfileType = profileId === "blind" ? "blind" : profileId === "deaf" ? "deaf" : "deafblind";
 
   // 1) Send setup messages as soon as conversation WS is open (match test room order)
   // Keep STT in backend so transcript + tone both come from Python pipeline.
   useEffect(() => {
     if (!convConnected || !sendConvJSON) return;
+    console.log("[ConvWS] setup", {
+      sessionId,
+      profileId,
+      backendProfileType,
+      wantsTts,
+      apiUrl: effectiveApiUrl,
+      wsUrl: conversationWsUrl,
+    });
     sendConvJSON({ type: "set_profile", profile_type: backendProfileType });
     sendConvJSON({ type: "start_listening", use_web_speech: false });
     sendConvJSON({ type: "set_room", room: sessionId });
     sendConvJSON({ type: "set_tts_preference", value: wantsTts });
-  }, [convConnected, backendProfileType, sessionId, wantsTts, sendConvJSON]);
+  }, [convConnected, backendProfileType, sessionId, wantsTts, sendConvJSON, profileId, effectiveApiUrl, conversationWsUrl]);
 
   const startSendingAudio = useCallback(() => {
     const stream = mediaStreamRef.current;
@@ -420,18 +819,31 @@ export function LiveWorkspace({
   }, [convConnected, startSendingAudio]);
 
   const startCamera = async () => {
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setErrors((prev) => [
+        ...prev.slice(-5),
+        "Camera requires a secure page. Use https://localhost:3000 (run: npm run dev, not dev:http).",
+      ]);
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720, facingMode: "user" },
-        audio: false,
+        audio: true,
       });
+      localVideoStreamRef.current = stream;
+      setLocalStreamState(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
         setCameraOn(true);
       }
-    } catch {
-      setErrors((prev) => [...prev.slice(-5), "Camera permission denied"]);
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Camera blocked. Allow camera for this site in browser settings, or use https://localhost:3000 (npm run dev)."
+          : "Camera permission denied. Use https://localhost:3000 (npm run dev) for camera support.";
+      setErrors((prev) => [...prev.slice(-5), msg]);
     }
   };
 
@@ -439,6 +851,9 @@ export function LiveWorkspace({
     const stream = videoRef.current?.srcObject as MediaStream | null;
     stream?.getTracks().forEach((track) => track.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
+    localVideoStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localVideoStreamRef.current = null;
+    setLocalStreamState(null);
     setCameraOn(false);
   };
 
@@ -448,6 +863,10 @@ export function LiveWorkspace({
   useEffect(() => {
     if (cameraOn && !isConnected) connect();
   }, [cameraOn, isConnected, connect]);
+
+  useEffect(() => {
+    if (cameraOn && !convConnected) connectConv();
+  }, [cameraOn, convConnected, connectConv]);
 
   // Stream sign-detection frames whenever camera is on (no separate start button)
   useEffect(() => {
@@ -496,22 +915,42 @@ export function LiveWorkspace({
   const sendReply = (replyOrLabel: string) => {
     setQuickRepliesUsed((prev) => prev + 1);
     const spokenText = backendQuickReplies.length > 0 ? getSpokenTextForReply(replyOrLabel) : replyOrLabel;
-    speakText(spokenText, apiUrl);
+    speakText(spokenText, effectiveApiUrl);
   };
 
-  const combinedTranscriptText = useMemo(
-    () => [...conversationTranscript.map((l) => l.text), ...transcript].join(" "),
-    [conversationTranscript, transcript]
-  );
+  const brailleInputText = useMemo(() => {
+    if (!useBraille) return "";
+    const remoteSpeech = conversationTranscript
+      .filter((line) => {
+        if (!line.text.trim()) return false;
+        if (!localClientId) return false;
+        if (!line.speakerClientId) return false;
+        return line.speakerClientId !== localClientId;
+      })
+      .map((line) => line.text);
+    return remoteSpeech.join(" ");
+  }, [conversationTranscript, localClientId, useBraille]);
+
+  const brailleDisplayCells = useMemo(() => {
+    if (!useBraille || !brailleInputText.trim()) return [];
+    return textToBrailleCells(brailleInputText + " ").slice(-BRAILLE_DISPLAY_CELLS);
+  }, [brailleInputText, useBraille]);
 
   useEffect(() => {
     if (!useBraille) return;
-    if (!combinedTranscriptText.trim()) {
-      setBrailleCells([]);
-      return;
-    }
-    setBrailleCells(textToBrailleCells(combinedTranscriptText + " "));
-  }, [combinedTranscriptText, useBraille]);
+    const remoteLineCount = conversationTranscript.filter((line) => {
+      if (!line.text.trim()) return false;
+      if (!localClientId) return false;
+      if (!line.speakerClientId) return false;
+      return line.speakerClientId !== localClientId;
+    }).length;
+    console.log("[Braille] input update", {
+      localClientId,
+      remotePeerId,
+      remoteLineCount,
+      brailleInputPreview: brailleInputText.slice(-80),
+    });
+  }, [useBraille, conversationTranscript, localClientId, remotePeerId, brailleInputText]);
 
   const sendChatMessage = () => {
     const trimmed = chatInput.trim();
@@ -566,7 +1005,13 @@ export function LiveWorkspace({
         <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
           <h2 className="text-2xl font-semibold text-slate-100">Conversation input</h2>
           <div className="mt-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
-            <video ref={videoRef} className="aspect-[16/9] w-full object-cover" muted playsInline />
+            <VideoCall
+              localStream={localStreamState}
+              remoteStream={remoteStream}
+              className="w-full"
+            />
+            {/* Hidden video element for sign detection */}
+            <video ref={videoRef} className="hidden" muted playsInline />
           </div>
           <canvas ref={canvasRef} className="hidden" />
           <div className="mt-4 flex flex-wrap gap-2">
@@ -574,9 +1019,15 @@ export function LiveWorkspace({
               {cameraOn ? "Turn camera off" : "Turn camera on"}
             </button>
             <button type="button" onClick={isConnected ? disconnect : connect} className="rounded-lg border border-slate-500 px-4 py-2">
-              {isConnected ? "Disconnect socket" : "Reconnect socket"}
+              {isConnected ? "Disconnect sign socket" : "Reconnect sign socket"}
+            </button>
+            <button type="button" onClick={convConnected ? disconnectConv : connectConv} className="rounded-lg border border-slate-500 px-4 py-2">
+              {convConnected ? "Disconnect call signaling" : "Reconnect call signaling"}
             </button>
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Sign socket: {isConnected ? "Connected" : "Disconnected"} | Call signaling: {convConnected ? "Connected" : "Disconnected"} | WebRTC: {connectionState}
+          </p>
           {buffering && <p className="mt-3 text-sm text-amber-300">{buffering}</p>}
         </section>
 
@@ -611,8 +1062,10 @@ export function LiveWorkspace({
       <section className="mt-6 space-y-4">
         <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
           <h2 className="text-2xl font-semibold text-slate-100">
-            {profileId === "deaf" || profileId === "mute"
-              ? "Current interpretation (tone + captions)"
+            {profileId === "deaf"
+              ? "Current interpretation (hand signs)"
+              : profileId === "mute"
+                ? "Current interpretation (tone + captions)"
               : "Current interpretation"}
           </h2>
           <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -633,64 +1086,120 @@ export function LiveWorkspace({
         {showCaptionFeed && (
           <section className="max-h-[72vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
             <h2 className="text-2xl font-semibold text-slate-100">
-              {profileId === "deaf" || profileId === "mute"
-                ? "Current interpretation (tone + captions)"
+              {profileId === "deaf"
+                ? "Current interpretation (tone captions)"
+                : profileId === "mute"
+                  ? "Current interpretation (tone + captions)"
                 : "Current interpretation"}
             </h2>
-            {conversationTranscript.length > 0 ? (
+            {profileId === "deaf" ? (
               <>
-                <p className={`mt-3 font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
-                  {conversationTranscript[conversationTranscript.length - 1]?.text}
-                </p>
-                {lastConvTone && (() => {
-                  const { emoji, label } = getToneDisplay(lastConvTone);
-                  return (
-                    <p className="mt-2 text-amber-300">
-                      {emoji} {label}
+                {conversationTranscript.length > 0 ? (
+                  <p className="mt-3 text-4xl font-semibold text-cyan-300">
+                    {conversationTranscript[conversationTranscript.length - 1]?.text}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-4xl font-semibold text-slate-500">No speech yet</p>
+                )}
+                {convStatus && <p className="mt-1 text-sm text-slate-400">Status: {convStatus}</p>}
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
+                    <h3 className="text-lg font-semibold text-slate-100">Confirmed tone</h3>
+                    {lastConvTone ? (
+                      (() => {
+                        const { emoji, label } = getToneDisplay(lastConvTone);
+                        return (
+                          <p className="mt-2 text-amber-300">
+                            {emoji} {label}
+                          </p>
+                        );
+                      })()
+                    ) : (
+                      <p className="mt-2 text-slate-400">Waiting for confirmed tone...</p>
+                    )}
+                    <p className="mt-2 text-xs text-slate-500">
+                      Tone is batched and shown only after confidence is strong enough.
                     </p>
-                  );
-                })()}
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
+                    <h3 className="text-lg font-semibold text-slate-100">Caption stream</h3>
+                    {conversationTranscript.length === 0 ? (
+                      <p className="mt-2 text-slate-400">No speech yet. Speak to see captions.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-1">
+                        {conversationTranscript.map((line, i) => (
+                          <li key={i} className="text-slate-200">
+                            <span className={line.sender === "remote" ? "text-emerald-300" : "text-cyan-300"}>
+                              {line.sender === "remote" ? "Remote" : "You"}:
+                            </span>{" "}
+                            {line.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
               </>
             ) : (
               <>
-                <p className={`mt-3 font-semibold ${latestSign === NO_SIGN_YET ? "text-slate-500" : "text-cyan-300"} ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
-                  {latestSign === NO_SIGN_YET ? "No sign yet" : latestSign}
-                </p>
-                <p className="mt-2 text-slate-300">
-                  {hasReceivedSign ? `Confidence: ${Math.round(confidence * 100)}%` : cameraOn && !isConnected ? "Connecting sign detection…" : "Turn camera on"}
-                </p>
-              </>
-            )}
-            {convStatus && <p className="mt-1 text-sm text-slate-400">Status: {convStatus}</p>}
-            {showCaptionFeed && (
-              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
-                <h3 className="text-lg font-semibold text-slate-100">Caption stream</h3>
-                <p className="mt-2 text-sm text-slate-500">Sign (from camera)</p>
-                {transcript.length > 0 ? (
-                  <p className="mt-1 text-slate-400">{transcript.join(" ")}</p>
-                ) : hasReceivedSign ? (
-                  <p className="mt-1 text-slate-400">Current sign: {latestSign} ({Math.round(confidence * 100)}%)</p>
-                ) : cameraOn && !isConnected ? (
-                  <p className="mt-1 text-slate-400">Connecting sign detection…</p>
-                ) : (
-                  <p className="mt-1 text-slate-400">No sign yet. Turn camera on.</p>
-                )}
-                <p className="mt-3 text-sm text-slate-500">Conversation (transcript + tone)</p>
-                {conversationTranscript.length === 0 ? (
-                  <p className="mt-1 text-slate-400">No speech yet. Speak to see captions.</p>
-                ) : (
-                  <ul className="mt-1 space-y-1">
-                    {conversationTranscript.map((line, i) => {
-                      const { emoji, label } = getToneDisplay(line.tone);
+                {conversationTranscript.length > 0 ? (
+                  <>
+                    <p className={`mt-3 font-semibold text-cyan-300 ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
+                      {conversationTranscript[conversationTranscript.length - 1]?.text}
+                    </p>
+                    {lastConvTone && (() => {
+                      const { emoji, label } = getToneDisplay(lastConvTone);
                       return (
-                        <li key={i} className="text-slate-200">
-                          <span className="text-amber-300">{emoji} {label}</span> {line.text}
-                        </li>
+                        <p className="mt-2 text-amber-300">
+                          {emoji} {label}
+                        </p>
                       );
-                    })}
-                  </ul>
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    <p className={`mt-3 font-semibold ${latestSign === NO_SIGN_YET ? "text-slate-500" : "text-cyan-300"} ${profileId === "deafblind" ? "text-5xl" : "text-4xl"}`}>
+                      {latestSign === NO_SIGN_YET ? "No sign yet" : latestSign}
+                    </p>
+                    <p className="mt-2 text-slate-300">
+                      {hasReceivedSign ? `Confidence: ${Math.round(confidence * 100)}%` : cameraOn && !isConnected ? "Connecting sign detection…" : "Turn camera on"}
+                    </p>
+                  </>
                 )}
-              </div>
+                {convStatus && <p className="mt-1 text-sm text-slate-400">Status: {convStatus}</p>}
+                <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
+                  <h3 className="text-lg font-semibold text-slate-100">Caption stream</h3>
+                  <p className="mt-2 text-sm text-slate-500">Sign (from camera)</p>
+                  {transcript.length > 0 ? (
+                    <p className="mt-1 text-slate-400">{transcript.join(" ")}</p>
+                  ) : hasReceivedSign ? (
+                    <p className="mt-1 text-slate-400">Current sign: {latestSign} ({Math.round(confidence * 100)}%)</p>
+                  ) : cameraOn && !isConnected ? (
+                    <p className="mt-1 text-slate-400">Connecting sign detection…</p>
+                  ) : (
+                    <p className="mt-1 text-slate-400">No sign yet. Turn camera on.</p>
+                  )}
+                  <p className="mt-3 text-sm text-slate-500">Conversation (transcript + tone)</p>
+                  {conversationTranscript.length === 0 ? (
+                    <p className="mt-1 text-slate-400">No speech yet. Speak to see captions.</p>
+                  ) : (
+                    <ul className="mt-1 space-y-1">
+                      {conversationTranscript.map((line, i) => {
+                        const { emoji, label } = getToneDisplay(line.tone);
+                        return (
+                          <li key={i} className="text-slate-200">
+                            <span className={line.sender === "remote" ? "text-emerald-300" : "text-cyan-300"}>
+                              {line.sender === "remote" ? "Remote" : "You"}:
+                            </span>{" "}
+                            <span className="text-amber-300">{emoji} {label}</span>{" "}
+                            {line.text}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </>
             )}
           </section>
         )}
@@ -724,6 +1233,31 @@ export function LiveWorkspace({
               </button>
             </div>
           </section>
+
+          {useBraille && (
+            <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
+              <h2 className="text-2xl font-semibold text-slate-100">Braille output</h2>
+              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
+                <div className="flex flex-nowrap items-center justify-center gap-2">
+                  {Array.from({ length: BRAILLE_DISPLAY_CELLS }, (_, i) => {
+                    const pattern = brailleDisplayCells[i] ?? EMPTY_BRAILLE_CELL;
+                    const char = brailleCellToCharacter(pattern);
+                    return (
+                      <div key={i} className="flex flex-col items-center gap-1">
+                        <BrailleCell pattern={pattern} />
+                        <span className="min-h-[1.25rem] text-center text-sm font-mono text-slate-400" aria-hidden="true">
+                          {char === " " ? "·" : char}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {brailleDisplayCells.length === 0 && (
+                  <p className="mt-2 text-center text-sm text-slate-500">Conversation and sign text will appear here.</p>
+                )}
+              </div>
+            </section>
+          )}
 
           <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
             <h2 className="text-2xl font-semibold text-slate-100">Predictive quick replies</h2>

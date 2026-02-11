@@ -36,18 +36,28 @@ export function useWebSocket({
   }, []);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    ) {
+      return;
+    }
     intentionalCloseRef.current = false;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) {
+        ws.close();
+        return;
+      }
       reconnectCountRef.current = 0;
       setIsConnected(true);
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       setIsConnected(false);
       wsRef.current = null;
 
@@ -59,6 +69,7 @@ export function useWebSocket({
     };
 
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws) return;
       const raw = event.data;
       try {
         const data = JSON.parse(raw);

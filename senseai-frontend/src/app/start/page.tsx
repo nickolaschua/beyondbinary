@@ -16,11 +16,37 @@ interface HealthPayload {
   services?: Record<string, boolean>;
 }
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function resolveRuntimeBackendUrl(rawUrl: string, kind: "http" | "ws"): string {
+  if (typeof window === "undefined") return rawUrl;
+  try {
+    const url = new URL(rawUrl);
+    const pageHost = window.location.hostname;
+    const pageIsLocal = LOCAL_HOSTS.has(pageHost);
+    const targetIsLocal = LOCAL_HOSTS.has(url.hostname);
+
+    if (targetIsLocal && !pageIsLocal) {
+      url.hostname = pageHost;
+    }
+
+    if (window.location.protocol === "https:") {
+      if (kind === "http" && url.protocol === "http:") url.protocol = "https:";
+      if (kind === "ws" && url.protocol === "ws:") url.protocol = "wss:";
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return rawUrl;
+  }
+}
+
 export default function StartMeetingPage() {
   const router = useRouter();
   const [source, setSource] = useState<MeetingSource>("local");
-  const apiUrl = API_URL;
-  const wsUrl = WS_URL;
+  const apiUrl = useMemo(() => resolveRuntimeBackendUrl(API_URL, "http"), []);
+  const wsUrl = useMemo(() => resolveRuntimeBackendUrl(WS_URL, "ws"), []);
+  const [sessionCode, setSessionCode] = useState("main-room");
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -37,6 +63,12 @@ export default function StartMeetingPage() {
   useEffect(() => {
     if (!config) router.replace("/onboarding");
   }, [config, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sid = new URLSearchParams(window.location.search).get("sid");
+    if (sid?.trim()) setSessionCode(sid.trim());
+  }, []);
 
   const runChecks = useCallback(async () => {
     setChecking(true);
@@ -74,15 +106,15 @@ export default function StartMeetingPage() {
   const startMeeting = useCallback(() => {
     if (!profile || !config) return;
     writeUserConfig(config);
-    const sessionId = `${Date.now()}`;
+    const room = sessionCode.trim() || "main-room";
     const query = new URLSearchParams({
       api: apiUrl,
       ws: wsUrl,
       source,
-      sid: sessionId,
+      sid: room,
     });
     router.push(`/live/${profile.id}?${query.toString()}`);
-  }, [apiUrl, config, profile, router, source, wsUrl]);
+  }, [apiUrl, config, profile, router, source, wsUrl, sessionCode]);
 
   const voiceCommands: VoiceCommand[] = [
     { phrases: ["start", "start session", "begin"], action: () => startMeeting() },
@@ -204,6 +236,15 @@ export default function StartMeetingPage() {
             <ReadinessCard title="Profile Output" status detail={profile.incoming[0]} />
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-3">
+            <label className="w-full text-sm text-slate-300">
+              Room code (use the same code on both computers)
+              <input
+                value={sessionCode}
+                onChange={(e) => setSessionCode(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100"
+                placeholder="main-room"
+              />
+            </label>
             <button
               type="button"
               onClick={runChecks}

@@ -4,7 +4,23 @@
 const STUN_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    // Free TURN servers for relay when direct connection fails
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -38,10 +54,24 @@ class PeerConnection {
     };
 
     this.pc.onconnectionstatechange = () => {
-      console.log('[Peer]', this.peerId, 'state:', this.pc.connectionState);
+      console.log('[Peer]', this.peerId, 'connection state:', this.pc.connectionState);
       if (this.pc.connectionState === 'failed') {
         console.warn('[Peer] Connection failed - check firewall/network');
       }
+      if (this.pc.connectionState === 'connected') {
+        console.log('✅ [Peer] Successfully connected to', this.peerId);
+      }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
+      console.log('[Peer]', this.peerId, 'ICE state:', this.pc.iceConnectionState);
+      if (this.pc.iceConnectionState === 'failed') {
+        console.error('❌ [Peer] ICE connection failed - TURN server may be needed');
+      }
+    };
+
+    this.pc.onicegatheringstatechange = () => {
+      console.log('[Peer]', this.peerId, 'ICE gathering:', this.pc.iceGatheringState);
     };
   }
 

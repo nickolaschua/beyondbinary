@@ -60,6 +60,19 @@ export const BRAILLE_MAP: Record<string, BrailleCellPattern> = {
   "#": [_, _, DOT, DOT, DOT, DOT],
 };
 
+function patternKey(pattern: BrailleCellPattern): string {
+  return pattern.join(",");
+}
+
+const BRAILLE_TO_CHAR: Record<string, string> = {};
+for (const [char, pattern] of Object.entries(BRAILLE_MAP)) {
+  BRAILLE_TO_CHAR[patternKey(pattern)] = char;
+}
+
+export function brailleCellToCharacter(pattern: BrailleCellPattern): string {
+  return BRAILLE_TO_CHAR[patternKey(pattern)] ?? " ";
+}
+
 const DIGIT_TO_LETTER: Record<string, string> = {
   "1": "a",
   "2": "b",

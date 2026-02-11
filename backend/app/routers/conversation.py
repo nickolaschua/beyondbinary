@@ -164,6 +164,42 @@ async def conversation_ws(websocket: WebSocket):
     # Let client know its server-assigned peer id for deterministic WebRTC initiator selection.
     await websocket.send_json({"type": "connection_ready", "client_id": client_id})
 
+    async def _send_speech_event(event: dict) -> None:
+        """Send speech-related events to self and fan out to room peers."""
+        event_type = str(event.get("type", "unknown"))
+        event_text = str(event.get("text", "")).strip()
+        event_preview = event_text[:80] + ("..." if len(event_text) > 80 else "")
+        utterance_id = event.get("utterance_id")
+
+        local_payload = dict(event)
+        local_payload.setdefault("speaker_client_id", client_id)
+        local_payload.setdefault("sender", "local")
+        await websocket.send_json(local_payload)
+
+        if not room_id:
+            print(
+                f"[SpeechFanout] type={event_type} room=<none> from={client_id[:8]} "
+                f"to=local_only utterance={utterance_id} text='{event_preview}'"
+            )
+            return
+
+        peer_payload = dict(event)
+        peer_payload["speaker_client_id"] = client_id
+        peer_payload["sender"] = "remote"
+        delivered = 0
+        for peer in _room_registry.get(room_id, []):
+            if peer["ws"] is websocket:
+                continue
+            try:
+                await peer["ws"].send_json(peer_payload)
+                delivered += 1
+            except Exception:
+                continue
+        print(
+            f"[SpeechFanout] type={event_type} room={room_id} from={client_id[:8]} "
+            f"to_peers={delivered} utterance={utterance_id} text='{event_preview}'"
+        )
+
     async def on_tone_sample(tone_result: dict, start_time: float, end_time: float):
         """Store tone sample and emit late tone_update for overlapping pending utterances."""
         sample = ToneSample(
@@ -196,7 +232,7 @@ async def conversation_ws(websocket: WebSocket):
             agg_label = aggregated["label"]
             agg_conf = aggregated["confidence"]
             try:
-                await websocket.send_json({
+                await _send_speech_event({
                     "type": "tone_update",
                     "utterance_id": u["id"],
                     "tone": agg_label,
@@ -215,7 +251,7 @@ async def conversation_ws(websocket: WebSocket):
             for u in reversed(pending_utterances):
                 if (u.get("tone_confidence") or 0) < 0.2:
                     try:
-                        await websocket.send_json({
+                        await _send_speech_event({
                             "type": "tone_update",
                             "utterance_id": u["id"],
                             "tone": tone_label,
@@ -248,6 +284,18 @@ async def conversation_ws(websocket: WebSocket):
             if msg_type == "set_profile":
                 profile_type = message.get("profile_type", "deaf")
                 conn_info["profile_type"] = profile_type
+                if profile_type == "deaf":
+                    # Deaf workspace: slower/larger tone sampling to reduce jittery intermediate labels.
+                    prosody_buffer.window_size = 4.0
+                    prosody_buffer.analysis_interval = 1.6
+                else:
+                    # Default responsiveness for other profiles.
+                    prosody_buffer.window_size = 2.5
+                    prosody_buffer.analysis_interval = 0.8
+                print(
+                    f"🎭 Prosody config profile={profile_type} "
+                    f"window={prosody_buffer.window_size}s interval={prosody_buffer.analysis_interval}s"
+                )
                 await websocket.send_json({"type": "status", "message": f"profile_set:{profile_type}"})
                 continue
 
@@ -408,7 +456,7 @@ async def conversation_ws(websocket: WebSocket):
                 }
                 if utterance_id:
                     transcript_payload["utterance_id"] = utterance_id
-                await websocket.send_json(transcript_payload)
+                await _send_speech_event(transcript_payload)
 
                 # Only process final transcripts for tone/quick-replies
                 if is_final:
@@ -440,7 +488,7 @@ async def conversation_ws(websocket: WebSocket):
                         pending_utterances.pop(0)
 
                     # utterance_created (new contract)
-                    await websocket.send_json({
+                    await _send_speech_event({
                         "type": "utterance_created",
                         "utterance_id": utterance_id,
                         "start_time": utterance_start,
@@ -459,7 +507,7 @@ async def conversation_ws(websocket: WebSocket):
                     }
                     if utterance_id:
                         tone_payload["utterance_id"] = utterance_id
-                    await websocket.send_json(tone_payload)
+                    await _send_speech_event(tone_payload)
 
                     # Process for quick-replies
                     conversation_history += f"\n[{tone_label}]: {transcript_text}"
@@ -473,7 +521,7 @@ async def conversation_ws(websocket: WebSocket):
                         profile_type=profile_type,
                     )
 
-                    await websocket.send_json({
+                    await _send_speech_event({
                         "type": "simplified",
                         "text": claude_result.get("simplified", transcript_text),
                         "quick_replies": claude_result.get("quick_replies", []),
@@ -595,7 +643,7 @@ async def conversation_ws(websocket: WebSocket):
                 pending_utterances.pop(0)
 
             # utterance_created (new contract) - always include tone
-            await websocket.send_json({
+            await _send_speech_event({
                 "type": "utterance_created",
                 "utterance_id": utterance_id,
                 "start_time": utterance_start,
@@ -606,7 +654,7 @@ async def conversation_ws(websocket: WebSocket):
             })
 
             # transcript (backward compat)
-            await websocket.send_json({
+            await _send_speech_event({
                 "type": "transcript",
                 "utterance_id": utterance_id,
                 "text": transcript_text,
@@ -617,7 +665,7 @@ async def conversation_ws(websocket: WebSocket):
             })
 
             # tone_update (ensure frontend gets it with utterance_id)
-            await websocket.send_json({
+            await _send_speech_event({
                 "type": "tone_update",
                 "utterance_id": utterance_id,
                 "tone": tone_label,
@@ -638,7 +686,7 @@ async def conversation_ws(websocket: WebSocket):
                 profile_type=profile_type,
             )
 
-            await websocket.send_json({
+            await _send_speech_event({
                 "type": "simplified",
                 "text": claude_result.get("simplified", transcript_text),
                 "quick_replies": claude_result.get("quick_replies", []),
